@@ -7,17 +7,13 @@ import { AppModule } from './app.module'
 async function bootstrap() {
   const app = await NestFactory.create(AppModule)
   const configService = app.get(ConfigService)
-  const frontendUrl = configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000'
   const port = Number(configService.get<string>('PORT') ?? 3001)
-  const allowedOrigins = new Set(
-    [
-      frontendUrl,
-      'http://localhost:3000',
-      'https://photo-manager.chatmenow.cloud',
-    ]
-      .map((origin) => origin.trim())
-      .filter(Boolean),
-  )
+  const defaultMobileOrigins = ['http://localhost', 'https://localhost', 'capacitor://localhost']
+  const envAllowedOrigins = (configService.get<string>('ALLOWED_ORIGINS') ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+  const allowedOrigins = new Set([...defaultMobileOrigins, ...envAllowedOrigins])
 
   app.setGlobalPrefix('api')
   app.enableCors({
@@ -27,11 +23,11 @@ async function bootstrap() {
         return
       }
 
-      callback(null, false)
+      callback(new Error(`CORS: origin '${origin}' not allowed`))
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
     optionsSuccessStatus: 204,
   })
   app.useGlobalPipes(

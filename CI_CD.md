@@ -44,7 +44,7 @@ Examples:
 ## Required runtime env vars
 
 - `PORT`
-- `FRONTEND_URL`
+- `ALLOWED_ORIGINS`
 - `DATABASE_URL`
 - `JWT_SECRET`
 - `AWS_REGION`
@@ -52,14 +52,15 @@ Examples:
 - `AWS_SECRET_ACCESS_KEY`
 - `S3_BUCKET_NAME`
 
-Recommended extras:
+Required extras:
 
 - `JWT_EXPIRES_IN`
 - `JWT_REMEMBER_EXPIRES_IN`
 - `JWT_REMEMBER_SECRET`
 - `API_KEY`
 
-`API_KEY` chỉ cần nếu bạn tự thêm middleware bảo vệ kiểu `x-api-key` giống `chatmenow-be`.
+`API_KEY` được backend dùng để xác thực header `x-api-key` cho toàn bộ API.
+`ALLOWED_ORIGINS` là danh sách origin phân tách bằng dấu phẩy, ví dụ `http://localhost:3000,https://photo-manager.chatmenow.cloud`.
 
 ## Notes
 

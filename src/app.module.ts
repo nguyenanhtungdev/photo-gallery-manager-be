@@ -1,6 +1,7 @@
-import { Module } from '@nestjs/common'
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { AuthModule } from './auth/auth.module'
+import { ApiKeyMiddleware } from './common/middleware/api-key.middleware'
 import { DatabaseModule } from './database/database.module'
 import { DashboardModule } from './dashboard/dashboard.module'
 import { ProjectsModule } from './projects/projects.module'
@@ -16,4 +17,10 @@ import { ProjectsModule } from './projects/projects.module'
     ProjectsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(ApiKeyMiddleware)
+      .forRoutes({ path: '*', method: RequestMethod.ALL })
+  }
+}
