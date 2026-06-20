@@ -16,16 +16,16 @@ jobs:
 
     defaults:
       run:
-        working-directory: photo-gallery-manager-be
+        working-directory: .
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
-          cache-dependency-path: photo-gallery-manager-be/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - run: npm ci
       - run: npm run lint --if-present
@@ -78,8 +78,8 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: ./photo-gallery-manager-be
-          file: ./photo-gallery-manager-be/Dockerfile
+          context: .
+          file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
 
