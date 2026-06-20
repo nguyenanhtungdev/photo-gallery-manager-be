@@ -36,10 +36,10 @@ function getAdminInput(): AdminSeedInput {
 }
 
 async function main() {
-  const mongoUri = process.env.MONGO_URI ?? process.env.DATABASE_URL
+  const mongoUri = process.env.DATABASE_URL
 
   if (!mongoUri) {
-    throw new Error('Missing MONGO_URI or DATABASE_URL in environment variables')
+    throw new Error('Missing DATABASE_URL in environment variables')
   }
 
   const admin = getAdminInput()

@@ -103,7 +103,7 @@ jobs:
             IMAGE="${{ needs.docker.outputs.image }}:${{ needs.docker.outputs.tag }}"
             CONTAINER="photo-gallery-manager-be-dev"
             ENV_FILE="$HOME/photo-gallery-manager-be-dev/.env"
-            REQUIRED_VARS=("PORT" "FRONTEND_URL" "MONGO_URI" "JWT_SECRET" "JWT_REMEMBER_SECRET" "AWS_REGION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "S3_BUCKET_NAME")
+            REQUIRED_VARS=("PORT" "FRONTEND_URL" "DATABASE_URL" "JWT_SECRET" "AWS_REGION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "S3_BUCKET_NAME")
             GHCR_USER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
 
             if [[ ! -f "$ENV_FILE" ]]; then
@@ -152,7 +152,7 @@ jobs:
             IMAGE="${{ needs.docker.outputs.image }}:${{ needs.docker.outputs.tag }}"
             CONTAINER="photo-gallery-manager-be-prod"
             ENV_FILE="$HOME/photo-gallery-manager-be-prod/.env"
-            REQUIRED_VARS=("PORT" "FRONTEND_URL" "MONGO_URI" "JWT_SECRET" "JWT_REMEMBER_SECRET" "AWS_REGION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "S3_BUCKET_NAME")
+            REQUIRED_VARS=("PORT" "FRONTEND_URL" "DATABASE_URL" "JWT_SECRET" "AWS_REGION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "S3_BUCKET_NAME")
             GHCR_USER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
 
             if [[ ! -f "$ENV_FILE" ]]; then
