@@ -6,6 +6,19 @@ export interface User {
   email: string
   username: string
   passwordHash: string
+  rememberedLogins: Array<{
+    sessionId: string
+    deviceId: string
+    deviceName?: string
+    createdAt: Date
+    lastUsedAt: Date
+  }>
+  currentSession?: {
+    sessionId?: string | null
+    deviceId?: string | null
+    deviceName?: string
+    loggedInAt?: Date | null
+  }
   createdAt: Date
   updatedAt: Date
 }
@@ -34,6 +47,33 @@ const userSchema = new Schema<User>(
     passwordHash: {
       type: String,
       required: true,
+    },
+    rememberedLogins: {
+      type: [
+        new Schema(
+          {
+            sessionId: { type: String, required: true },
+            deviceId: { type: String, required: true },
+            deviceName: { type: String, default: '' },
+            createdAt: { type: Date, default: Date.now },
+            lastUsedAt: { type: Date, default: Date.now },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+    currentSession: {
+      type: new Schema(
+        {
+          sessionId: { type: String, default: null },
+          deviceId: { type: String, default: null },
+          deviceName: { type: String, default: '' },
+          loggedInAt: { type: Date, default: null },
+        },
+        { _id: false },
+      ),
+      default: null,
     },
   },
   {

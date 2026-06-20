@@ -6,8 +6,13 @@ export interface Photo {
   id: string
   projectId: string
   filename: string
-  previewUrl: string
-  originalUrl: string
+  storageKey?: string
+  isDisabled?: boolean
+  disabledAt?: Date | null
+  previewUrl?: string
+  originalUrl?: string
+  contentType?: string
+  fileSize?: number
   width: number
   height: number
 }
@@ -27,8 +32,10 @@ export interface Project {
   name: string
   clientName: string
   clientPhone: string
+  keyword: string
   shareToken: string
   status: ProjectStatus
+  paidAmount?: number
   notes?: string
   photos: Photo[]
   accessLogs: AccessLog[]
@@ -41,8 +48,13 @@ const photoSchema = new Schema<Photo>(
     id: { type: String, required: true, trim: true },
     projectId: { type: String, required: true, trim: true },
     filename: { type: String, required: true, trim: true },
-    previewUrl: { type: String, required: true, trim: true },
-    originalUrl: { type: String, required: true, trim: true },
+    storageKey: { type: String, trim: true },
+    isDisabled: { type: Boolean, default: false },
+    disabledAt: { type: Date, default: null },
+    previewUrl: { type: String, trim: true },
+    originalUrl: { type: String, trim: true },
+    contentType: { type: String, trim: true },
+    fileSize: { type: Number, min: 0 },
     width: { type: Number, required: true },
     height: { type: Number, required: true },
   },
@@ -87,6 +99,12 @@ const projectSchema = new Schema<Project>(
       required: true,
       trim: true,
     },
+    keyword: {
+      type: String,
+      required: true,
+      trim: true,
+      default: '',
+    },
     shareToken: {
       type: String,
       required: true,
@@ -97,6 +115,11 @@ const projectSchema = new Schema<Project>(
       type: String,
       enum: ['waiting_payment', 'paid'],
       default: 'waiting_payment',
+    },
+    paidAmount: {
+      type: Number,
+      min: 0,
+      default: null,
     },
     notes: {
       type: String,
@@ -118,6 +141,7 @@ const projectSchema = new Schema<Project>(
 )
 
 projectSchema.index({ ownerId: 1, createdAt: -1 })
+projectSchema.index({ ownerId: 1, keyword: 1 })
 
 export type ProjectDocument = HydratedDocument<Project>
 

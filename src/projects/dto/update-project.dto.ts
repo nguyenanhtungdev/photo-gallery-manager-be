@@ -10,7 +10,7 @@ function trimOptionalText(value: unknown) {
   return text.length > 0 ? text : undefined
 }
 
-export class CreateProjectDto {
+export class UpdateProjectDto {
   @IsOptional()
   @Transform(({ value }) => trimText(value))
   @IsString()

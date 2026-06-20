@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Request, UseGuards } from '@nestjs/common'
 import { AuthService } from './auth.service'
 import { LoginDto } from './dto/login.dto'
+import { RememberedLoginDto } from './dto/remembered-login.dto'
 import { RegisterDto } from './dto/register.dto'
 import { JwtAuthGuard } from './guards/jwt-auth.guard'
 
@@ -16,6 +17,11 @@ export class AuthController {
   @Post('login')
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto)
+  }
+
+  @Post('remembered-login')
+  rememberedLogin(@Body() rememberedLoginDto: RememberedLoginDto) {
+    return this.authService.loginWithRememberToken(rememberedLoginDto)
   }
 
   @UseGuards(JwtAuthGuard)

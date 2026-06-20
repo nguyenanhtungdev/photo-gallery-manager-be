@@ -1,6 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
+import { AddProjectPhotoDto } from './dto/add-project-photo.dto'
 import { CreateProjectDto } from './dto/create-project.dto'
+import { CreateProjectPhotoPresignDto } from './dto/create-project-photo-presign.dto'
+import { ListProjectsQueryDto } from './dto/list-projects-query.dto'
+import { UpdateProjectDto } from './dto/update-project.dto'
 import { UpdateProjectStatusDto } from './dto/update-project-status.dto'
 import { ProjectsService } from './projects.service'
 
@@ -16,8 +20,8 @@ export class ProjectsController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  list(@Request() req: AuthenticatedRequest) {
-    return this.projectsService.list(req.user.sub)
+  list(@Request() req: AuthenticatedRequest, @Query() query: ListProjectsQueryDto) {
+    return this.projectsService.list(req.user.sub, query)
   }
 
   @UseGuards(JwtAuthGuard)
@@ -38,6 +42,36 @@ export class ProjectsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  update(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() updateProjectDto: UpdateProjectDto,
+  ) {
+    return this.projectsService.update(req.user.sub, id, updateProjectDto)
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/photos/presign-put')
+  createPhotoUploadUrl(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() createProjectPhotoPresignDto: CreateProjectPhotoPresignDto,
+  ) {
+    return this.projectsService.createPhotoUploadUrl(req.user.sub, id, createProjectPhotoPresignDto)
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/photos')
+  addPhoto(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() addProjectPhotoDto: AddProjectPhotoDto,
+  ) {
+    return this.projectsService.addPhoto(req.user.sub, id, addProjectPhotoDto)
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch(':id/status')
   updateStatus(
     @Request() req: AuthenticatedRequest,
@@ -51,5 +85,15 @@ export class ProjectsController {
   @Delete(':id')
   remove(@Request() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.projectsService.remove(req.user.sub, id)
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':projectId/photos/:photoId')
+  removePhoto(
+    @Request() req: AuthenticatedRequest,
+    @Param('projectId') projectId: string,
+    @Param('photoId') photoId: string,
+  ) {
+    return this.projectsService.removePhoto(req.user.sub, projectId, photoId)
   }
 }
