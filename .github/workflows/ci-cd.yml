@@ -51,6 +51,7 @@ jobs:
         id: vars
         run: |
           OWNER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          IMAGE="${{ env.REGISTRY }}/${OWNER}/photo-gallery-manager-be"
 
           if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
             TAG="dev-latest"
@@ -59,7 +60,7 @@ jobs:
           fi
 
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "image=${{ env.REGISTRY }}/${OWNER}/photo-gallery-manager-be:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@v3
         with:
@@ -99,7 +100,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            IMAGE="${{ needs.docker.outputs.image }}"
+            IMAGE="${{ needs.docker.outputs.image }}:${{ needs.docker.outputs.tag }}"
             CONTAINER="photo-gallery-manager-be-dev"
             ENV_FILE="$HOME/photo-gallery-manager-be-dev/.env"
             REQUIRED_VARS=("PORT" "FRONTEND_URL" "MONGO_URI" "JWT_SECRET" "JWT_REMEMBER_SECRET" "AWS_REGION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "S3_BUCKET_NAME")
@@ -148,7 +149,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            IMAGE="${{ needs.docker.outputs.image }}"
+            IMAGE="${{ needs.docker.outputs.image }}:${{ needs.docker.outputs.tag }}"
             CONTAINER="photo-gallery-manager-be-prod"
             ENV_FILE="$HOME/photo-gallery-manager-be-prod/.env"
             REQUIRED_VARS=("PORT" "FRONTEND_URL" "MONGO_URI" "JWT_SECRET" "JWT_REMEMBER_SECRET" "AWS_REGION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "S3_BUCKET_NAME")
