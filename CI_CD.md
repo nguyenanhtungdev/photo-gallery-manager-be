@@ -57,6 +57,9 @@ Recommended extras:
 - `JWT_EXPIRES_IN`
 - `JWT_REMEMBER_EXPIRES_IN`
 - `JWT_REMEMBER_SECRET`
+- `API_KEY`
+
+`API_KEY` chỉ cần nếu bạn tự thêm middleware bảo vệ kiểu `x-api-key` giống `chatmenow-be`.
 
 ## Notes
 
