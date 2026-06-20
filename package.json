@@ -6,7 +6,7 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "npm run start:dev",
     "seed:admin": "ts-node --transpile-only scripts/seed-admin.ts",
-    "start": "node dist/main.js",
+    "start": "node dist/src/main.js",
     "start:dev": "nodemon",
     "lint": "tsc --noEmit"
   },
