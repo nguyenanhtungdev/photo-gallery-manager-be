@@ -1,0 +1,6 @@
+{
+  "watch": ["src", "scripts", ".env"],
+  "ext": "ts,json,env",
+  "exec": "ts-node --transpile-only src/main.ts",
+  "signal": "SIGTERM"
+}
