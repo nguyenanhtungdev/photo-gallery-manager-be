@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Request, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Patch, Post, Request, UseGuards } from '@nestjs/common'
 import { AuthService } from './auth.service'
 import { ConfirmForgotPasswordCodeDto } from './dto/confirm-forgot-password-code.dto'
 import { ConfirmPasswordChangeCodeDto } from './dto/confirm-password-change-code.dto'
@@ -9,6 +9,7 @@ import { RegisterDto } from './dto/register.dto'
 import { RequestForgotPasswordCodeDto } from './dto/request-forgot-password-code.dto'
 import { RequestPasswordChangeCodeDto } from './dto/request-password-change-code.dto'
 import { RequestRegisterCodeDto } from './dto/request-register-code.dto'
+import { UpdateUserSettingsDto } from './dto/update-user-settings.dto'
 import { JwtAuthGuard } from './guards/jwt-auth.guard'
 
 @Controller('auth')
@@ -67,5 +68,14 @@ export class AuthController {
   @Get('me')
   me(@Request() req: { user: { sub: string } }) {
     return this.authService.getProfile(req.user.sub)
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('settings')
+  updateSettings(
+    @Request() req: { user: { sub: string } },
+    @Body() updateUserSettingsDto: UpdateUserSettingsDto,
+  ) {
+    return this.authService.updateSettings(req.user.sub, updateUserSettingsDto)
   }
 }

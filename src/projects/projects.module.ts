@@ -3,9 +3,10 @@ import { ConfigModule } from '@nestjs/config'
 import { ProjectsController } from './projects.controller'
 import { ProjectsService } from './projects.service'
 import { StorageService } from '../storage/storage.service'
+import { NotificationsModule } from '../notifications/notifications.module'
 
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, NotificationsModule],
   controllers: [ProjectsController],
   providers: [ProjectsService, StorageService],
 })

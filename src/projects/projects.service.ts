@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { randomBytes, randomUUID } from 'node:crypto'
 import { isValidObjectId, Types } from 'mongoose'
 import { StorageService } from '../storage/storage.service'
+import { UserModel } from '../auth/models/user.model'
+import { NotificationsService } from '../notifications/notifications.service'
 import { AddProjectPhotoDto } from './dto/add-project-photo.dto'
 import { CreateProjectDto } from './dto/create-project.dto'
 import { CreateProjectPhotoPresignDto } from './dto/create-project-photo-presign.dto'
@@ -10,9 +12,24 @@ import { UpdateProjectDto } from './dto/update-project.dto'
 import { UpdateProjectStatusDto } from './dto/update-project-status.dto'
 import { Photo, Project, ProjectDocument, ProjectModel } from './models/project.model'
 
+type ShareAccessMetadata = {
+  forwardedFor?: string
+  realIp?: string
+  userAgent?: string
+}
+
+type ShareAccessRecord = {
+  ip: string
+  userAgent: string
+  viewedAt: Date
+}
+
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly storageService: StorageService) {}
+  constructor(
+    private readonly storageService: StorageService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async list(ownerId: string, query: ListProjectsQueryDto) {
     const baseFilter = this.buildListBaseFilter(ownerId, query)
@@ -78,6 +95,19 @@ export class ProjectsService {
       accessLogs: [],
     })
 
+    await this.notificationsService.create({
+      ownerId,
+      projectId: project._id,
+      type: 'project_created',
+      title: 'Project mới đã được tạo',
+      message: `Bạn vừa tạo project ${project.name}.`,
+      projectName: project.name,
+      metadata: {
+        clientName: project.clientName,
+        clientPhone: project.clientPhone,
+      },
+    })
+
     return {
       project: await this.toProjectResponse(project),
     }
@@ -118,6 +148,9 @@ export class ProjectsService {
         clientName: updateProjectDto.clientName,
         clientPhone: resolvedClientPhone,
         notes: updateProjectDto.notes,
+        ...(updateProjectDto.imageResizeWidth !== undefined
+          ? { imageResizeWidth: updateProjectDto.imageResizeWidth }
+          : {}),
         keyword,
       },
       {
@@ -134,13 +167,31 @@ export class ProjectsService {
     }
   }
 
-  async getByShareToken(shareToken: string) {
+  async getByShareToken(shareToken: string, accessMetadata?: ShareAccessMetadata) {
     const project = await ProjectModel.findOne({
       shareToken: shareToken.trim(),
     }).exec()
 
     if (!project) {
       throw new NotFoundException('Project khong ton tai')
+    }
+
+    if (accessMetadata) {
+      const accessRecord = this.recordShareAccess(project, accessMetadata)
+      await project.save()
+      await this.notificationsService.create({
+        ownerId: project.ownerId,
+        projectId: project._id,
+        type: 'share_accessed',
+        title: 'Khách vừa truy cập link share',
+        message: `Có khách ẩn danh vừa xem gallery ${project.name}.`,
+        projectName: project.name,
+        metadata: {
+          ip: accessRecord.ip,
+          userAgent: accessRecord.userAgent,
+          viewedAt: accessRecord.viewedAt,
+        },
+      })
     }
 
     return {
@@ -228,6 +279,23 @@ export class ProjectsService {
     this.ensureProjectKeyword(project)
     await project.save()
 
+    await this.notificationsService.create({
+      ownerId,
+      projectId: project._id,
+      type: 'payment_updated',
+      title: updateProjectStatusDto.status === 'paid'
+        ? 'Project đã được đánh dấu thanh toán'
+        : 'Project đã chuyển về chờ thanh toán',
+      message: updateProjectStatusDto.status === 'paid'
+        ? `${project.name} đã thanh toán${project.paidAmount != null ? ` ${project.paidAmount.toLocaleString('vi-VN')} VNĐ` : ''}.`
+        : `${project.name} đang chờ thanh toán.`,
+      projectName: project.name,
+      metadata: {
+        status: project.status,
+        paidAmount: project.paidAmount ?? null,
+      },
+    })
+
     return {
       project: await this.toProjectResponse(project),
     }
@@ -269,6 +337,7 @@ export class ProjectsService {
 
   private async toProjectResponse(project: ProjectDocument) {
     const visiblePhotos = project.photos.filter((photo) => !photo.isDisabled)
+    const effectiveImageResizeWidth = await this.resolveEffectiveImageResizeWidth(project)
 
     return {
       id: project._id.toString(),
@@ -279,10 +348,61 @@ export class ProjectsService {
       status: project.status,
       notes: project.notes,
       paidAmount: project.paidAmount ?? null,
+      imageResizeWidth: project.imageResizeWidth ?? null,
+      effectiveImageResizeWidth,
       createdAt: project.createdAt,
       photos: await Promise.all(visiblePhotos.map((photo) => this.toPhotoResponse(photo))),
-      accessLogs: project.accessLogs,
+      accessLogs: [...project.accessLogs].sort(
+        (first, second) => new Date(second.viewedAt).getTime() - new Date(first.viewedAt).getTime(),
+      ),
     }
+  }
+
+  private recordShareAccess(project: ProjectDocument, accessMetadata: ShareAccessMetadata): ShareAccessRecord {
+    const now = new Date()
+    const ip = this.resolveAccessIp(accessMetadata)
+    const userAgent = accessMetadata.userAgent?.trim() || 'Anonymous visitor'
+
+    project.accessLogs.unshift({
+      id: randomUUID(),
+      projectId: project._id.toString(),
+      ip,
+      userAgent,
+      viewedAt: now,
+      viewCount: 1,
+    })
+
+    project.accessLogs = project.accessLogs.slice(0, 200)
+
+    return {
+      ip,
+      userAgent,
+      viewedAt: now,
+    }
+  }
+
+  private resolveAccessIp(accessMetadata: ShareAccessMetadata) {
+    const forwardedIp = accessMetadata.forwardedFor
+      ?.split(',')
+      .map((value) => value.trim())
+      .find(Boolean)
+
+    return forwardedIp || accessMetadata.realIp?.trim() || 'Ẩn danh'
+  }
+
+  private async resolveEffectiveImageResizeWidth(project: ProjectDocument): Promise<120 | 360 | 480 | 720 | null> {
+    if (project.imageResizeWidth === 120 || project.imageResizeWidth === 360 || project.imageResizeWidth === 480 || project.imageResizeWidth === 720) {
+      return project.imageResizeWidth
+    }
+
+    const owner = await UserModel.findById(project.ownerId, { imageResizeWidth: 1 }).lean().exec()
+    const ownerValue = owner?.imageResizeWidth
+
+    if (ownerValue === null) {
+      return null
+    }
+
+    return ownerValue === 120 || ownerValue === 360 || ownerValue === 480 || ownerValue === 720 ? ownerValue : 720
   }
 
   private async toPhotoResponse(photo: Photo) {

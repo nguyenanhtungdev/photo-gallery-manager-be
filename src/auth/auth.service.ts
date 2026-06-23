@@ -23,6 +23,7 @@ import { ConfirmRegisterCodeDto } from "./dto/confirm-register-code.dto";
 import { RequestPasswordChangeCodeDto } from "./dto/request-password-change-code.dto";
 import { ConfirmPasswordChangeCodeDto } from "./dto/confirm-password-change-code.dto";
 import { MailService } from "./mail.service";
+import { UpdateUserSettingsDto } from "./dto/update-user-settings.dto";
 
 type SafeUser = {
   id: string;
@@ -30,6 +31,7 @@ type SafeUser = {
   email: string;
   username: string;
   role: UserRole;
+  imageResizeWidth: 120 | 360 | 480 | 720 | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -337,6 +339,24 @@ export class AuthService {
     };
   }
 
+  async updateSettings(userId: string, updateUserSettingsDto: UpdateUserSettingsDto) {
+    const user = await UserModel.findById(userId).exec();
+
+    if (!user) {
+      throw new UnauthorizedException("Người dùng không hợp lệ");
+    }
+
+    if (updateUserSettingsDto.imageResizeWidth !== undefined) {
+      user.imageResizeWidth = updateUserSettingsDto.imageResizeWidth;
+    }
+
+    await user.save();
+
+    return {
+      user: this.toSafeUser(user),
+    };
+  }
+
   async validateAccessTokenSession(
     payload: AccessTokenPayload,
   ): Promise<AuthenticatedUser> {
@@ -448,9 +468,18 @@ export class AuthService {
       email: user.email,
       username: user.username,
       role: this.resolveUserRole(user.role),
+      imageResizeWidth: this.resolveImageResizeWidth(user.imageResizeWidth),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
+  }
+
+  private resolveImageResizeWidth(value?: number | null): 120 | 360 | 480 | 720 | null {
+    if (value === null) {
+      return null;
+    }
+
+    return value === 120 || value === 360 || value === 480 || value === 720 ? value : 720;
   }
 
   private resolveUserRole(role?: UserRole | null): UserRole {

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { AddProjectPhotoDto } from './dto/add-project-photo.dto'
 import { CreateProjectDto } from './dto/create-project.dto'
@@ -31,8 +31,17 @@ export class ProjectsController {
   }
 
   @Get('share/:shareToken')
-  getByShareToken(@Param('shareToken') shareToken: string) {
-    return this.projectsService.getByShareToken(shareToken)
+  getByShareToken(
+    @Param('shareToken') shareToken: string,
+    @Headers('user-agent') userAgent?: string,
+    @Headers('x-forwarded-for') forwardedFor?: string,
+    @Headers('x-real-ip') realIp?: string,
+  ) {
+    return this.projectsService.getByShareToken(shareToken, {
+      forwardedFor,
+      realIp,
+      userAgent,
+    })
   }
 
   @UseGuards(JwtAuthGuard)

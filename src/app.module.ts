@@ -4,6 +4,7 @@ import { AuthModule } from './auth/auth.module'
 import { ApiKeyMiddleware } from './common/middleware/api-key.middleware'
 import { DatabaseModule } from './database/database.module'
 import { DashboardModule } from './dashboard/dashboard.module'
+import { NotificationsModule } from './notifications/notifications.module'
 import { ProjectsModule } from './projects/projects.module'
 
 @Module({
@@ -14,6 +15,7 @@ import { ProjectsModule } from './projects/projects.module'
     DatabaseModule,
     AuthModule,
     DashboardModule,
+    NotificationsModule,
     ProjectsModule,
   ],
 })

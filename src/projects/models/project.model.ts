@@ -36,6 +36,7 @@ export interface Project {
   shareToken: string
   status: ProjectStatus
   paidAmount?: number
+  imageResizeWidth?: number | null
   notes?: string
   photos: Photo[]
   accessLogs: AccessLog[]
@@ -119,6 +120,11 @@ const projectSchema = new Schema<Project>(
     paidAmount: {
       type: Number,
       min: 0,
+      default: null,
+    },
+    imageResizeWidth: {
+      type: Number,
+      enum: [120, 360, 480, 720, null],
       default: null,
     },
     notes: {
