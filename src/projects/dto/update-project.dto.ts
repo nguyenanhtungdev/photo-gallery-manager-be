@@ -24,11 +24,11 @@ export class UpdateProjectDto {
   @MaxLength(100)
   clientName!: string
 
-  @Transform(({ value }) => trimText(value))
+  @IsOptional()
+  @Transform(({ value }) => trimOptionalText(value))
   @IsString()
-  @MinLength(1)
   @MaxLength(30)
-  clientPhone!: string
+  clientPhone?: string
 
   @IsOptional()
   @Transform(({ value }) => trimOptionalText(value))

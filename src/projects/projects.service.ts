@@ -56,10 +56,11 @@ export class ProjectsService {
 
   async create(ownerId: string, createProjectDto: CreateProjectDto) {
     const resolvedProjectName = createProjectDto.name?.trim() || createProjectDto.clientName
+    const resolvedClientPhone = createProjectDto.clientPhone?.trim() || null
     const keyword = this.buildProjectKeyword({
       name: resolvedProjectName,
       clientName: createProjectDto.clientName,
-      clientPhone: createProjectDto.clientPhone,
+      clientPhone: resolvedClientPhone,
       notes: createProjectDto.notes,
     })
 
@@ -67,7 +68,7 @@ export class ProjectsService {
       ownerId: this.toObjectId(ownerId),
       name: resolvedProjectName,
       clientName: createProjectDto.clientName,
-      clientPhone: createProjectDto.clientPhone,
+      clientPhone: resolvedClientPhone,
       keyword,
       notes: createProjectDto.notes,
       shareToken: this.generateShareToken(),
@@ -99,10 +100,11 @@ export class ProjectsService {
 
   async update(ownerId: string, projectId: string, updateProjectDto: UpdateProjectDto) {
     const resolvedProjectName = updateProjectDto.name?.trim() || updateProjectDto.clientName
+    const resolvedClientPhone = updateProjectDto.clientPhone?.trim() || null
     const keyword = this.buildProjectKeyword({
       name: resolvedProjectName,
       clientName: updateProjectDto.clientName,
-      clientPhone: updateProjectDto.clientPhone,
+      clientPhone: resolvedClientPhone,
       notes: updateProjectDto.notes,
     })
 
@@ -114,7 +116,7 @@ export class ProjectsService {
       {
         name: resolvedProjectName,
         clientName: updateProjectDto.clientName,
-        clientPhone: updateProjectDto.clientPhone,
+        clientPhone: resolvedClientPhone,
         notes: updateProjectDto.notes,
         keyword,
       },
@@ -415,14 +417,14 @@ export class ProjectsService {
   private buildProjectKeyword(input: {
     name: string
     clientName: string
-    clientPhone: string
+    clientPhone?: string | null
     notes?: string
   }) {
     const keyword = this.normalizeForKeyword(
-      [input.name, input.clientName, input.clientPhone, input.notes ?? ''].join(' '),
+      [input.name, input.clientName, input.clientPhone ?? '', input.notes ?? ''].join(' '),
     )
 
-    return keyword || this.normalizeForKeyword([input.clientName, input.clientPhone].join(' '))
+    return keyword || this.normalizeForKeyword([input.clientName, input.clientPhone ?? ''].join(' '))
   }
 
   private ensureProjectKeyword(project: ProjectDocument) {
