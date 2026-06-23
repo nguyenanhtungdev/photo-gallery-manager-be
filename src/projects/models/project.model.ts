@@ -31,7 +31,7 @@ export interface Project {
   ownerId: Types.ObjectId
   name: string
   clientName: string
-  clientPhone: string
+  clientPhone: string | null
   keyword: string
   shareToken: string
   status: ProjectStatus
@@ -96,7 +96,7 @@ const projectSchema = new Schema<Project>(
     },
     clientPhone: {
       type: String,
-      required: true,
+      default: null,
       trim: true,
     },
     keyword: {
