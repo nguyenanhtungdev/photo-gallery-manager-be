@@ -1,10 +1,13 @@
 import { HydratedDocument, Model, Schema, Types, model, models } from 'mongoose'
 
+export type UserRole = 'admin' | 'user'
+
 export interface User {
   _id: Types.ObjectId
   name?: string | null
   email: string
   username: string
+  role: UserRole
   passwordHash: string
   rememberedLogins: Array<{
     sessionId: string
@@ -43,6 +46,12 @@ const userSchema = new Schema<User>(
       unique: true,
       trim: true,
       lowercase: true,
+    },
+    role: {
+      type: String,
+      enum: ['admin', 'user'],
+      default: 'user',
+      index: true,
     },
     passwordHash: {
       type: String,

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "backfill:user-role": "ts-node --transpile-only scripts/backfill-user-role.ts",
     "dev": "npm run start:dev",
     "seed:admin": "ts-node --transpile-only scripts/seed-admin.ts",
     "start": "node dist/src/main.js",

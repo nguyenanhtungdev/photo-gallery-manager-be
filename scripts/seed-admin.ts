@@ -57,6 +57,7 @@ async function main() {
       existingUser.name = admin.name || existingUser.name
       existingUser.email = admin.email
       existingUser.username = admin.username
+      existingUser.role = 'admin'
       existingUser.passwordHash = passwordHash
       await existingUser.save()
 
@@ -68,6 +69,7 @@ async function main() {
       name: admin.name,
       email: admin.email,
       username: admin.username,
+      role: 'admin',
       passwordHash,
     })
 

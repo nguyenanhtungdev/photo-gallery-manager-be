@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { Error as MongooseError } from "mongoose";
 import type { StringValue } from "ms";
 import { LoginDto } from "./dto/login.dto";
-import { UserDocument, UserModel } from "./models/user.model";
+import { UserDocument, UserModel, UserRole } from "./models/user.model";
 import { RememberedLoginDto } from "./dto/remembered-login.dto";
 import { RegisterDto } from "./dto/register.dto";
 
@@ -18,6 +18,7 @@ type SafeUser = {
   name?: string | null;
   email: string;
   username: string;
+  role: UserRole;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -28,6 +29,10 @@ type AccessTokenPayload = {
   email: string;
   sessionId: string;
   deviceId: string;
+};
+
+type AuthenticatedUser = AccessTokenPayload & {
+  role: UserRole;
 };
 
 type RememberTokenPayload = {
@@ -64,6 +69,7 @@ export class AuthService {
         name: null,
         email,
         username,
+        role: "user",
         passwordHash,
       });
 
@@ -162,7 +168,9 @@ export class AuthService {
     };
   }
 
-  async validateAccessTokenSession(payload: AccessTokenPayload) {
+  async validateAccessTokenSession(
+    payload: AccessTokenPayload,
+  ): Promise<AuthenticatedUser> {
     const user = await UserModel.findById(payload.sub).exec();
     if (!user) {
       throw new UnauthorizedException("Người dùng không hợp lệ");
@@ -178,7 +186,10 @@ export class AuthService {
       throw new UnauthorizedException("Phiên đăng nhập đã hết hiệu lực");
     }
 
-    return payload;
+    return {
+      ...payload,
+      role: this.resolveUserRole(user.role),
+    };
   }
 
   private async buildAuthResponse(
@@ -267,9 +278,14 @@ export class AuthService {
       name: user.name,
       email: user.email,
       username: user.username,
+      role: this.resolveUserRole(user.role),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
+  }
+
+  private resolveUserRole(role?: UserRole | null): UserRole {
+    return role === "admin" ? "admin" : "user";
   }
 
   private isDuplicateKeyError(
