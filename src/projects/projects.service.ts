@@ -1,58 +1,76 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import { randomBytes, randomUUID } from 'node:crypto'
-import { isValidObjectId, Types } from 'mongoose'
-import { StorageService } from '../storage/storage.service'
-import { UserModel } from '../auth/models/user.model'
-import { NotificationsService } from '../notifications/notifications.service'
-import { AddProjectPhotoDto } from './dto/add-project-photo.dto'
-import { CreateProjectDto } from './dto/create-project.dto'
-import { CreateProjectPhotoPresignDto } from './dto/create-project-photo-presign.dto'
-import { ListProjectsQueryDto } from './dto/list-projects-query.dto'
-import { UpdateProjectDto } from './dto/update-project.dto'
-import { UpdateProjectStatusDto } from './dto/update-project-status.dto'
-import { Photo, Project, ProjectDocument, ProjectModel } from './models/project.model'
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { randomBytes, randomUUID } from "node:crypto";
+import { isValidObjectId, Types } from "mongoose";
+import { StorageService } from "../storage/storage.service";
+import { UserModel } from "../auth/models/user.model";
+import { NotificationsService } from "../notifications/notifications.service";
+import { ProjectShareGateway } from "./project-share.gateway";
+import { AddProjectPhotoDto } from "./dto/add-project-photo.dto";
+import { CreateProjectDto } from "./dto/create-project.dto";
+import { CreateProjectPhotoPresignDto } from "./dto/create-project-photo-presign.dto";
+import { ListProjectsQueryDto } from "./dto/list-projects-query.dto";
+import { UpdateProjectDto } from "./dto/update-project.dto";
+import { UpdateProjectStatusDto } from "./dto/update-project-status.dto";
+import {
+  Photo,
+  Project,
+  ProjectDocument,
+  ProjectModel,
+} from "./models/project.model";
 
 type ShareAccessMetadata = {
-  forwardedFor?: string
-  realIp?: string
-  userAgent?: string
-}
+  forwardedFor?: string;
+  realIp?: string;
+  userAgent?: string;
+};
 
 type ShareAccessRecord = {
-  ip: string
-  userAgent: string
-  viewedAt: Date
-}
+  ip: string;
+  userAgent: string;
+  viewedAt: Date;
+};
 
 @Injectable()
 export class ProjectsService {
   constructor(
     private readonly storageService: StorageService,
     private readonly notificationsService: NotificationsService,
+    private readonly projectShareGateway: ProjectShareGateway,
   ) {}
 
   async list(ownerId: string, query: ListProjectsQueryDto) {
-    const baseFilter = this.buildListBaseFilter(ownerId, query)
+    const baseFilter = this.buildListBaseFilter(ownerId, query);
     const listFilter = {
       ...baseFilter,
       ...(query.status ? { status: query.status } : {}),
-    }
-    const offset = query.offset ?? 0
-    const limit = query.limit ?? 12
+    };
+    const offset = query.offset ?? 0;
+    const limit = query.limit ?? 12;
 
-    const [projects, total, paidCount, waitingPaymentCount] = await Promise.all([
-      ProjectModel.find(listFilter)
-        .sort({ createdAt: -1 })
-        .skip(offset)
-        .limit(limit)
-        .exec(),
-      ProjectModel.countDocuments(listFilter).exec(),
-      ProjectModel.countDocuments({ ...baseFilter, status: 'paid' }).exec(),
-      ProjectModel.countDocuments({ ...baseFilter, status: 'waiting_payment' }).exec(),
-    ])
+    const [projects, total, paidCount, waitingPaymentCount] = await Promise.all(
+      [
+        ProjectModel.find(listFilter)
+          .sort({ createdAt: -1 })
+          .skip(offset)
+          .limit(limit)
+          .exec(),
+        ProjectModel.countDocuments(listFilter).exec(),
+        ProjectModel.countDocuments({ ...baseFilter, status: "paid" }).exec(),
+        ProjectModel.countDocuments({
+          ...baseFilter,
+          status: "waiting_payment",
+        }).exec(),
+      ],
+    );
 
-    const resolvedProjects = await Promise.all(projects.map((project) => this.toProjectResponse(project)))
-    const nextOffset = offset + resolvedProjects.length
+    const resolvedProjects = await Promise.all(
+      projects.map((project) => this.toProjectResponse(project)),
+    );
+    const nextOffset = offset + resolvedProjects.length;
 
     return {
       projects: resolvedProjects,
@@ -68,18 +86,19 @@ export class ProjectsService {
         paid: paidCount,
         waiting_payment: waitingPaymentCount,
       },
-    }
+    };
   }
 
   async create(ownerId: string, createProjectDto: CreateProjectDto) {
-    const resolvedProjectName = createProjectDto.name?.trim() || createProjectDto.clientName
-    const resolvedClientPhone = createProjectDto.clientPhone?.trim() || null
+    const resolvedProjectName =
+      createProjectDto.name?.trim() || createProjectDto.clientName;
+    const resolvedClientPhone = createProjectDto.clientPhone?.trim() || null;
     const keyword = this.buildProjectKeyword({
       name: resolvedProjectName,
       clientName: createProjectDto.clientName,
       clientPhone: resolvedClientPhone,
       notes: createProjectDto.notes,
-    })
+    });
 
     const project = await ProjectModel.create({
       ownerId: this.toObjectId(ownerId),
@@ -89,54 +108,63 @@ export class ProjectsService {
       keyword,
       notes: createProjectDto.notes,
       shareToken: this.generateShareToken(),
-      status: 'waiting_payment',
+      status: "waiting_payment",
       paidAmount: undefined,
       photos: [],
       accessLogs: [],
-    })
+    });
 
     await this.notificationsService.create({
       ownerId,
       projectId: project._id,
-      type: 'project_created',
-      title: 'Project mới đã được tạo',
+      type: "project_created",
+      title: "Project mới đã được tạo",
       message: `Bạn vừa tạo project ${project.name}.`,
       projectName: project.name,
       metadata: {
         clientName: project.clientName,
         clientPhone: project.clientPhone,
       },
-    })
+    });
+
+    this.projectShareGateway.emitSharedProjectUpdated(project.shareToken, {
+      project: await this.toProjectResponse(project),
+    });
 
     return {
       project: await this.toProjectResponse(project),
-    }
+    };
   }
 
   async getById(ownerId: string, projectId: string) {
     const project = await ProjectModel.findOne({
       _id: this.toProjectObjectId(projectId),
       ownerId: this.toObjectId(ownerId),
-    }).exec()
+    }).exec();
 
     if (!project) {
-      throw new NotFoundException('Project khong ton tai')
+      throw new NotFoundException("Project khong ton tai");
     }
 
     return {
       project: await this.toProjectResponse(project),
-    }
+    };
   }
 
-  async update(ownerId: string, projectId: string, updateProjectDto: UpdateProjectDto) {
-    const resolvedProjectName = updateProjectDto.name?.trim() || updateProjectDto.clientName
-    const resolvedClientPhone = updateProjectDto.clientPhone?.trim() || null
+  async update(
+    ownerId: string,
+    projectId: string,
+    updateProjectDto: UpdateProjectDto,
+  ) {
+    const resolvedProjectName =
+      updateProjectDto.name?.trim() || updateProjectDto.clientName;
+    const resolvedClientPhone = updateProjectDto.clientPhone?.trim() || null;
     const keyword = this.buildProjectKeyword({
       name: resolvedProjectName,
       clientName: updateProjectDto.clientName,
       clientPhone: resolvedClientPhone,
       notes: updateProjectDto.notes,
-    })
+    });
 
     const project = await ProjectModel.findOneAndUpdate(
       {
@@ -148,42 +176,42 @@ export class ProjectsService {
         clientName: updateProjectDto.clientName,
         clientPhone: resolvedClientPhone,
         notes: updateProjectDto.notes,
-        ...(updateProjectDto.imageResizeWidth !== undefined
-          ? { imageResizeWidth: updateProjectDto.imageResizeWidth }
-          : {}),
         keyword,
       },
       {
         new: true,
       },
-    ).exec()
+    ).exec();
 
     if (!project) {
-      throw new NotFoundException('Project khong ton tai')
+      throw new NotFoundException("Project khong ton tai");
     }
 
     return {
       project: await this.toProjectResponse(project),
-    }
+    };
   }
 
-  async getByShareToken(shareToken: string, accessMetadata?: ShareAccessMetadata) {
+  async getByShareToken(
+    shareToken: string,
+    accessMetadata?: ShareAccessMetadata,
+  ) {
     const project = await ProjectModel.findOne({
       shareToken: shareToken.trim(),
-    }).exec()
+    }).exec();
 
     if (!project) {
-      throw new NotFoundException('Project khong ton tai')
+      throw new NotFoundException("Project khong ton tai");
     }
 
     if (accessMetadata) {
-      const accessRecord = this.recordShareAccess(project, accessMetadata)
-      await project.save()
+      const accessRecord = this.recordShareAccess(project, accessMetadata);
+      await project.save();
       await this.notificationsService.create({
         ownerId: project.ownerId,
         projectId: project._id,
-        type: 'share_accessed',
-        title: 'Khách vừa truy cập link share',
+        type: "share_accessed",
+        title: "Khách vừa truy cập link share",
         message: `Có khách ẩn danh vừa xem gallery ${project.name}.`,
         projectName: project.name,
         metadata: {
@@ -191,12 +219,12 @@ export class ProjectsService {
           userAgent: accessRecord.userAgent,
           viewedAt: accessRecord.viewedAt,
         },
-      })
+      });
     }
 
     return {
       project: await this.toProjectResponse(project),
-    }
+    };
   }
 
   async createPhotoUploadUrl(
@@ -204,39 +232,46 @@ export class ProjectsService {
     projectId: string,
     createProjectPhotoPresignDto: CreateProjectPhotoPresignDto,
   ) {
-    await this.getOwnedProject(ownerId, projectId)
+    await this.getOwnedProject(ownerId, projectId);
     this.validateImageUpload(
       createProjectPhotoPresignDto.contentType,
       createProjectPhotoPresignDto.fileSize,
-    )
+    );
 
     const key = this.buildPhotoStorageKey(
       ownerId,
       projectId,
       createProjectPhotoPresignDto.fileName,
-    )
+    );
     const uploadUrl = await this.storageService.getSignedUploadUrl(
       key,
       createProjectPhotoPresignDto.contentType,
-    )
+    );
 
     return {
       key,
       uploadUrl,
-      method: 'PUT',
+      method: "PUT",
       contentType: createProjectPhotoPresignDto.contentType,
       expiresIn: 600,
-    }
+    };
   }
 
-  async addPhoto(ownerId: string, projectId: string, addProjectPhotoDto: AddProjectPhotoDto) {
-    const project = await this.getOwnedProject(ownerId, projectId)
-    this.validateImageUpload(addProjectPhotoDto.contentType, addProjectPhotoDto.fileSize)
+  async addPhoto(
+    ownerId: string,
+    projectId: string,
+    addProjectPhotoDto: AddProjectPhotoDto,
+  ) {
+    const project = await this.getOwnedProject(ownerId, projectId);
+    this.validateImageUpload(
+      addProjectPhotoDto.contentType,
+      addProjectPhotoDto.fileSize,
+    );
 
     const photo: Photo = {
       id: randomUUID(),
       projectId,
-      filename: addProjectPhotoDto.filename,
+      filename: this.buildRandomPhotoFilename(addProjectPhotoDto.filename),
       storageKey: addProjectPhotoDto.key,
       isDisabled: false,
       disabledAt: null,
@@ -244,100 +279,108 @@ export class ProjectsService {
       fileSize: addProjectPhotoDto.fileSize,
       width: addProjectPhotoDto.width ?? 0,
       height: addProjectPhotoDto.height ?? 0,
-    }
+    };
 
-    this.ensureProjectKeyword(project)
-    project.photos.unshift(photo)
-    await project.save()
+    this.ensureProjectKeyword(project);
+    project.photos.unshift(photo);
+    await project.save();
 
     return {
       project: await this.toProjectResponse(project),
-    }
+    };
   }
 
-  async updateStatus(ownerId: string, projectId: string, updateProjectStatusDto: UpdateProjectStatusDto) {
-    const project = await ProjectModel.findOneAndUpdate(
-      {
-        _id: this.toProjectObjectId(projectId),
-        ownerId: this.toObjectId(ownerId),
-      },
-      {
-        status: updateProjectStatusDto.status,
-        paidAmount: updateProjectStatusDto.status === 'paid'
-          ? (updateProjectStatusDto.paidAmount ?? null)
-          : null,
-      },
-      {
-        new: true,
-      },
-    ).exec()
+  async updateStatus(
+    ownerId: string,
+    projectId: string,
+    updateProjectStatusDto: UpdateProjectStatusDto,
+  ) {
+    const project = await this.getOwnedProject(ownerId, projectId);
 
-    if (!project) {
-      throw new NotFoundException('Project khong ton tai')
+    if (
+      project.status === "paid" &&
+      updateProjectStatusDto.status === "waiting_payment"
+    ) {
+      throw new BadRequestException(
+        "Project đã thanh toán thì không thể chuyển lại chờ thanh toán",
+      );
     }
 
-    this.ensureProjectKeyword(project)
-    await project.save()
+    project.status = updateProjectStatusDto.status;
+    project.paidAmount =
+      updateProjectStatusDto.status === "paid"
+        ? updateProjectStatusDto.paidAmount
+        : undefined;
+
+    this.ensureProjectKeyword(project);
+    await project.save();
 
     await this.notificationsService.create({
       ownerId,
       projectId: project._id,
-      type: 'payment_updated',
-      title: updateProjectStatusDto.status === 'paid'
-        ? 'Project đã được đánh dấu thanh toán'
-        : 'Project đã chuyển về chờ thanh toán',
-      message: updateProjectStatusDto.status === 'paid'
-        ? `${project.name} đã thanh toán${project.paidAmount != null ? ` ${project.paidAmount.toLocaleString('vi-VN')} VNĐ` : ''}.`
-        : `${project.name} đang chờ thanh toán.`,
+      type: "payment_updated",
+      title:
+        updateProjectStatusDto.status === "paid"
+          ? "Project đã được đánh dấu thanh toán"
+          : "Project đã chuyển về chờ thanh toán",
+      message:
+        updateProjectStatusDto.status === "paid"
+          ? `${project.name} đã thanh toán${project.paidAmount != null ? ` ${project.paidAmount.toLocaleString("vi-VN")} VNĐ` : ""}.`
+          : `${project.name} đang chờ thanh toán.`,
       projectName: project.name,
       metadata: {
         status: project.status,
         paidAmount: project.paidAmount ?? null,
       },
-    })
+    });
+
+    this.projectShareGateway.emitSharedProjectUpdated(project.shareToken, {
+      project: await this.toProjectResponse(project),
+    });
 
     return {
       project: await this.toProjectResponse(project),
-    }
+    };
   }
 
   async remove(ownerId: string, projectId: string) {
     const project = await ProjectModel.findOneAndDelete({
       _id: this.toProjectObjectId(projectId),
       ownerId: this.toObjectId(ownerId),
-    }).exec()
+    }).exec();
 
     if (!project) {
-      throw new NotFoundException('Project khong ton tai')
+      throw new NotFoundException("Project khong ton tai");
     }
 
     return {
       deleted: true,
       id: project._id.toString(),
-    }
+    };
   }
 
   async removePhoto(ownerId: string, projectId: string, photoId: string) {
-    const project = await this.getOwnedProject(ownerId, projectId)
-    const photo = project.photos.find((item) => item.id === photoId)
+    const project = await this.getOwnedProject(ownerId, projectId);
+    const photo = project.photos.find((item) => item.id === photoId);
 
     if (!photo) {
-      throw new NotFoundException('Anh khong ton tai')
+      throw new NotFoundException("Anh khong ton tai");
     }
 
-    this.ensureProjectKeyword(project)
-    photo.isDisabled = true
-    photo.disabledAt = new Date()
-    await project.save()
+    this.ensureProjectKeyword(project);
+    photo.isDisabled = true;
+    photo.disabledAt = new Date();
+    await project.save();
 
     return {
       project: await this.toProjectResponse(project),
-    }
+    };
   }
 
   private async toProjectResponse(project: ProjectDocument) {
-    const visiblePhotos = project.photos.filter((photo) => !photo.isDisabled)
-    const effectiveImageResizeWidth = await this.resolveEffectiveImageResizeWidth(project)
+    const visiblePhotos = project.photos.filter((photo) => !photo.isDisabled);
+    const effectiveImageResizeWidth =
+      await this.resolveEffectiveImageResizeWidth(project);
 
     return {
       id: project._id.toString(),
@@ -348,20 +391,27 @@ export class ProjectsService {
       status: project.status,
       notes: project.notes,
       paidAmount: project.paidAmount ?? null,
-      imageResizeWidth: project.imageResizeWidth ?? null,
+      imageResizeWidth: null,
       effectiveImageResizeWidth,
       createdAt: project.createdAt,
-      photos: await Promise.all(visiblePhotos.map((photo) => this.toPhotoResponse(photo))),
-      accessLogs: [...project.accessLogs].sort(
-        (first, second) => new Date(second.viewedAt).getTime() - new Date(first.viewedAt).getTime(),
+      photos: await Promise.all(
+        visiblePhotos.map((photo) => this.toPhotoResponse(photo)),
       ),
-    }
+      accessLogs: [...project.accessLogs].sort(
+        (first, second) =>
+          new Date(second.viewedAt).getTime() -
+          new Date(first.viewedAt).getTime(),
+      ),
+    };
   }
 
-  private recordShareAccess(project: ProjectDocument, accessMetadata: ShareAccessMetadata): ShareAccessRecord {
-    const now = new Date()
-    const ip = this.resolveAccessIp(accessMetadata)
-    const userAgent = accessMetadata.userAgent?.trim() || 'Anonymous visitor'
+  private recordShareAccess(
+    project: ProjectDocument,
+    accessMetadata: ShareAccessMetadata,
+  ): ShareAccessRecord {
+    const now = new Date();
+    const ip = this.resolveAccessIp(accessMetadata);
+    const userAgent = accessMetadata.userAgent?.trim() || "Anonymous visitor";
 
     project.accessLogs.unshift({
       id: randomUUID(),
@@ -370,44 +420,53 @@ export class ProjectsService {
       userAgent,
       viewedAt: now,
       viewCount: 1,
-    })
+    });
 
-    project.accessLogs = project.accessLogs.slice(0, 200)
+    project.accessLogs = project.accessLogs.slice(0, 200);
 
     return {
       ip,
       userAgent,
       viewedAt: now,
-    }
+    };
   }
 
   private resolveAccessIp(accessMetadata: ShareAccessMetadata) {
     const forwardedIp = accessMetadata.forwardedFor
-      ?.split(',')
+      ?.split(",")
       .map((value) => value.trim())
-      .find(Boolean)
+      .find(Boolean);
 
-    return forwardedIp || accessMetadata.realIp?.trim() || 'Ẩn danh'
+    return forwardedIp || accessMetadata.realIp?.trim() || "Ẩn danh";
   }
 
-  private async resolveEffectiveImageResizeWidth(project: ProjectDocument): Promise<120 | 360 | 480 | 720 | null> {
-    if (project.imageResizeWidth === 120 || project.imageResizeWidth === 360 || project.imageResizeWidth === 480 || project.imageResizeWidth === 720) {
-      return project.imageResizeWidth
-    }
-
-    const owner = await UserModel.findById(project.ownerId, { imageResizeWidth: 1 }).lean().exec()
-    const ownerValue = owner?.imageResizeWidth
+  private async resolveEffectiveImageResizeWidth(
+    project: ProjectDocument,
+  ): Promise<120 | 360 | 480 | 720 | null> {
+    const owner = await UserModel.findById(project.ownerId, {
+      imageResizeWidth: 1,
+    })
+      .lean()
+      .exec();
+    const ownerValue = owner?.imageResizeWidth;
 
     if (ownerValue === null) {
-      return null
+      return null;
     }
 
-    return ownerValue === 120 || ownerValue === 360 || ownerValue === 480 || ownerValue === 720 ? ownerValue : 720
+    return ownerValue === 120 ||
+      ownerValue === 360 ||
+      ownerValue === 480 ||
+      ownerValue === 720
+      ? ownerValue
+      : 720;
   }
 
   private async toPhotoResponse(photo: Photo) {
     if (photo.storageKey) {
-      const signedUrl = await this.storageService.getSignedViewUrl(photo.storageKey)
+      const signedUrl = await this.storageService.getSignedViewUrl(
+        photo.storageKey,
+      );
       return {
         id: photo.id,
         projectId: photo.projectId,
@@ -419,7 +478,7 @@ export class ProjectsService {
         originalUrl: signedUrl,
         width: photo.width,
         height: photo.height,
-      }
+      };
     }
 
     return {
@@ -429,128 +488,161 @@ export class ProjectsService {
       filename: photo.filename,
       contentType: photo.contentType,
       fileSize: photo.fileSize,
-      previewUrl: photo.previewUrl ?? photo.originalUrl ?? '',
-      originalUrl: photo.originalUrl ?? photo.previewUrl ?? '',
+      previewUrl: photo.previewUrl ?? photo.originalUrl ?? "",
+      originalUrl: photo.originalUrl ?? photo.previewUrl ?? "",
       width: photo.width,
       height: photo.height,
-    }
+    };
   }
 
   private toObjectId(value: string) {
-    return new Types.ObjectId(value)
+    return new Types.ObjectId(value);
   }
 
   private toProjectObjectId(projectId: string) {
     if (!isValidObjectId(projectId)) {
-      throw new NotFoundException('Project khong ton tai')
+      throw new NotFoundException("Project khong ton tai");
     }
 
-    return new Types.ObjectId(projectId)
+    return new Types.ObjectId(projectId);
   }
 
   private generateShareToken() {
-    return `share-${randomBytes(12).toString('hex')}`
+    return `share-${randomBytes(12).toString("hex")}`;
   }
 
   private async getOwnedProject(ownerId: string, projectId: string) {
     const project = await ProjectModel.findOne({
       _id: this.toProjectObjectId(projectId),
       ownerId: this.toObjectId(ownerId),
-    }).exec()
+    }).exec();
 
     if (!project) {
-      throw new NotFoundException('Project khong ton tai')
+      throw new NotFoundException("Project khong ton tai");
     }
 
-    return project
+    return project;
   }
 
-  private buildPhotoStorageKey(ownerId: string, projectId: string, fileName: string) {
-    const safeFileName = fileName
-      .trim()
-      .split('/')
-      .pop()
-      ?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'photo.jpg'
-    const randomPart = randomBytes(4).toString('hex')
+  private buildPhotoStorageKey(
+    ownerId: string,
+    projectId: string,
+    fileName: string,
+  ) {
+    const safeFileName =
+      fileName
+        .trim()
+        .split("/")
+        .pop()
+        ?.replace(/[^a-zA-Z0-9._-]/g, "_") || "photo.jpg";
+    const randomPart = randomBytes(4).toString("hex");
 
-    return `projects/${ownerId}/${projectId}/${Date.now()}-${randomPart}-${safeFileName}`
+    return `projects/${ownerId}/${projectId}/${Date.now()}-${randomPart}-${safeFileName}`;
+  }
+
+  private buildRandomPhotoFilename(originalFileName: string) {
+    const trimmedFileName = originalFileName.trim().split("/").pop() || "photo";
+    const extensionMatch = trimmedFileName.match(/(\.[a-zA-Z0-9]+)$/);
+    const extension = extensionMatch?.[1]?.toLowerCase() || "";
+    const randomPart = randomBytes(6).toString("hex");
+
+    return `${Date.now()}-${randomPart}${extension}`;
   }
 
   private validateImageUpload(contentType: string, fileSize: number) {
-    if (!contentType.startsWith('image/')) {
-      throw new BadRequestException('Chi ho tro upload file anh')
+    if (!contentType.startsWith("image/")) {
+      throw new BadRequestException("Chi ho tro upload file anh");
     }
 
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+    const allowedMimeTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+    ];
     if (!allowedMimeTypes.includes(contentType)) {
-      throw new BadRequestException('Loai anh chua duoc ho tro')
+      throw new BadRequestException("Loai anh chua duoc ho tro");
     }
 
-    if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > 30 * 1024 * 1024) {
-      throw new BadRequestException('Dung luong anh toi da 30MB')
+    if (
+      !Number.isFinite(fileSize) ||
+      fileSize <= 0 ||
+      fileSize > 30 * 1024 * 1024
+    ) {
+      throw new BadRequestException("Dung luong anh toi da 30MB");
     }
   }
 
   private buildListBaseFilter(ownerId: string, query: ListProjectsQueryDto) {
     const baseFilter: Record<string, unknown> = {
       ownerId: this.toObjectId(ownerId),
-    }
+    };
 
     if (query.q) {
-      const normalizedQuery = this.normalizeForKeyword(query.q)
-      const escapedKeywordQuery = this.escapeRegex(normalizedQuery)
-      const escapedRawQuery = this.escapeRegex(query.q.trim())
+      const normalizedQuery = this.normalizeForKeyword(query.q);
+      const escapedKeywordQuery = this.escapeRegex(normalizedQuery);
+      const escapedRawQuery = this.escapeRegex(query.q.trim());
 
       baseFilter.$or = [
-        { keyword: new RegExp(escapedKeywordQuery, 'i') },
-        { name: new RegExp(escapedRawQuery, 'i') },
-        { clientName: new RegExp(escapedRawQuery, 'i') },
-        { clientPhone: new RegExp(escapedRawQuery, 'i') },
-      ]
+        { keyword: new RegExp(escapedKeywordQuery, "i") },
+        { name: new RegExp(escapedRawQuery, "i") },
+        { clientName: new RegExp(escapedRawQuery, "i") },
+        { clientPhone: new RegExp(escapedRawQuery, "i") },
+      ];
     }
 
     if (query.dateFrom || query.dateTo) {
-      const createdAt: { $gte?: Date; $lte?: Date } = {}
+      const createdAt: { $gte?: Date; $lte?: Date } = {};
 
       if (query.dateFrom) {
-        const dateFrom = new Date(query.dateFrom)
+        const dateFrom = new Date(query.dateFrom);
         if (!Number.isNaN(dateFrom.getTime())) {
-          createdAt.$gte = dateFrom
+          createdAt.$gte = dateFrom;
         }
       }
 
       if (query.dateTo) {
-        const dateTo = new Date(query.dateTo)
+        const dateTo = new Date(query.dateTo);
         if (!Number.isNaN(dateTo.getTime())) {
-          createdAt.$lte = dateTo
+          createdAt.$lte = dateTo;
         }
       }
 
       if (createdAt.$gte || createdAt.$lte) {
-        baseFilter.createdAt = createdAt
+        baseFilter.createdAt = createdAt;
       }
     }
 
-    return baseFilter
+    return baseFilter;
   }
 
   private buildProjectKeyword(input: {
-    name: string
-    clientName: string
-    clientPhone?: string | null
-    notes?: string
+    name: string;
+    clientName: string;
+    clientPhone?: string | null;
+    notes?: string;
   }) {
     const keyword = this.normalizeForKeyword(
-      [input.name, input.clientName, input.clientPhone ?? '', input.notes ?? ''].join(' '),
-    )
+      [
+        input.name,
+        input.clientName,
+        input.clientPhone ?? "",
+        input.notes ?? "",
+      ].join(" "),
+    );
 
-    return keyword || this.normalizeForKeyword([input.clientName, input.clientPhone ?? ''].join(' '))
+    return (
+      keyword ||
+      this.normalizeForKeyword(
+        [input.clientName, input.clientPhone ?? ""].join(" "),
+      )
+    );
   }
 
   private ensureProjectKeyword(project: ProjectDocument) {
-    const keyword = project.keyword?.trim()
+    const keyword = project.keyword?.trim();
     if (keyword) {
-      return
+      return;
     }
 
     project.keyword = this.buildProjectKeyword({
@@ -558,19 +650,19 @@ export class ProjectsService {
       clientName: project.clientName,
       clientPhone: project.clientPhone,
       notes: project.notes ?? undefined,
-    })
+    });
   }
 
   private normalizeForKeyword(value: string) {
     return value
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
-      .replace(/\s+/g, ' ')
-      .trim()
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   private escapeRegex(value: string) {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 }

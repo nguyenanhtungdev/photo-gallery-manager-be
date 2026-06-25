@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common'
 import { Types } from 'mongoose'
 import { Notification, NotificationModel, NotificationType } from './models/notification.model'
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto'
+import { NotificationsGateway } from './notifications.gateway'
 
 type CreateNotificationInput = {
   ownerId: string | Types.ObjectId
@@ -15,6 +16,8 @@ type CreateNotificationInput = {
 
 @Injectable()
 export class NotificationsService {
+  constructor(private readonly notificationsGateway: NotificationsGateway) {}
+
   async list(ownerId: string, query: ListNotificationsQueryDto) {
     const ownerObjectId = this.toObjectId(ownerId)
     const offset = query.offset ?? 0
@@ -58,7 +61,15 @@ export class NotificationsService {
       readAt: null,
     })
 
-    return this.toResponse(notification)
+    const unreadCount = await this.countUnread(input.ownerId)
+    const response = this.toResponse(notification)
+
+    this.notificationsGateway.emitNotificationCreated(response.ownerId, {
+      notification: response,
+      unreadCount,
+    })
+
+    return response
   }
 
   async markAsRead(ownerId: string, notificationId: string) {
@@ -79,21 +90,39 @@ export class NotificationsService {
       throw new NotFoundException('Thong bao khong ton tai')
     }
 
+    const unreadCount = await this.countUnread(ownerId)
+    const readAt = notification.readAt instanceof Date
+      ? notification.readAt.toISOString()
+      : new Date(notification.readAt ?? Date.now()).toISOString()
+
+    this.notificationsGateway.emitNotificationRead(ownerId, {
+      notificationId: notification._id.toString(),
+      readAt,
+      unreadCount,
+    })
+
     return {
       notification: this.toResponse(notification),
     }
   }
 
   async markAllAsRead(ownerId: string) {
+    const readAt = new Date().toISOString()
+
     await NotificationModel.updateMany(
       {
         ownerId: this.toObjectId(ownerId),
         readAt: null,
       },
       {
-        readAt: new Date(),
+        readAt: new Date(readAt),
       },
     ).exec()
+
+    this.notificationsGateway.emitAllNotificationsRead(ownerId, {
+      readAt,
+      unreadCount: 0,
+    })
 
     return {
       success: true,
@@ -117,5 +146,12 @@ export class NotificationsService {
 
   private toObjectId(value: string | Types.ObjectId) {
     return typeof value === 'string' ? new Types.ObjectId(value) : value
+  }
+
+  private countUnread(ownerId: string | Types.ObjectId) {
+    return NotificationModel.countDocuments({
+      ownerId: this.toObjectId(ownerId),
+      readAt: null,
+    }).exec()
   }
 }

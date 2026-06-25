@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer'
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator'
+import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator'
 
 function trimText(value: unknown) {
   return String(value).trim()
@@ -35,9 +35,4 @@ export class UpdateProjectDto {
   @IsString()
   @MaxLength(500)
   notes?: string
-
-  @IsOptional()
-  @Transform(({ value }) => (value === undefined ? undefined : value === null || value === '' ? null : Number(value)))
-  @IsIn([120, 360, 480, 720, null])
-  imageResizeWidth?: 120 | 360 | 480 | 720 | null
 }
