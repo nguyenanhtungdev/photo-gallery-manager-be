@@ -8,6 +8,7 @@ export interface User {
   email: string
   username: string
   role: UserRole
+  avatarKey?: string | null
   imageResizeWidth?: number | null
   passwordHash: string
   rememberedLogins: Array<{
@@ -53,6 +54,11 @@ const userSchema = new Schema<User>(
       enum: ['admin', 'user'],
       default: 'user',
       index: true,
+    },
+    avatarKey: {
+      type: String,
+      trim: true,
+      default: null,
     },
     imageResizeWidth: {
       type: Number,

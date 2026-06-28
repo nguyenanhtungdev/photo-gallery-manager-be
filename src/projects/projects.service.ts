@@ -51,7 +51,7 @@ export class ProjectsService {
     const offset = query.offset ?? 0;
     const limit = query.limit ?? 12;
 
-    const [projects, total, paidCount, waitingPaymentCount] = await Promise.all(
+    const [projects, total, paidCount, waitingPaymentCount, cancelledCount] = await Promise.all(
       [
         ProjectModel.find(listFilter)
           .sort({ createdAt: -1 })
@@ -63,6 +63,10 @@ export class ProjectsService {
         ProjectModel.countDocuments({
           ...baseFilter,
           status: "waiting_payment",
+        }).exec(),
+        ProjectModel.countDocuments({
+          ...baseFilter,
+          status: "cancelled",
         }).exec(),
       ],
     );
@@ -82,9 +86,10 @@ export class ProjectsService {
         nextOffset,
       },
       stats: {
-        all: paidCount + waitingPaymentCount,
+        all: paidCount + waitingPaymentCount + cancelledCount,
         paid: paidCount,
         waiting_payment: waitingPaymentCount,
+        cancelled: cancelledCount,
       },
     };
   }
@@ -98,7 +103,7 @@ export class ProjectsService {
     const offset = query.offset ?? 0;
     const limit = query.limit ?? 12;
 
-    const [projects, total, paidCount, waitingPaymentCount] = await Promise.all(
+    const [projects, total, paidCount, waitingPaymentCount, cancelledCount] = await Promise.all(
       [
         ProjectModel.find(listFilter)
           .sort({ createdAt: -1 })
@@ -110,6 +115,10 @@ export class ProjectsService {
         ProjectModel.countDocuments({
           ...baseFilter,
           status: "waiting_payment",
+        }).exec(),
+        ProjectModel.countDocuments({
+          ...baseFilter,
+          status: "cancelled",
         }).exec(),
       ],
     );
@@ -129,9 +138,10 @@ export class ProjectsService {
         nextOffset,
       },
       stats: {
-        all: paidCount + waitingPaymentCount,
+        all: paidCount + waitingPaymentCount + cancelledCount,
         paid: paidCount,
         waiting_payment: waitingPaymentCount,
+        cancelled: cancelledCount,
       },
     };
   }
@@ -434,14 +444,7 @@ export class ProjectsService {
   ) {
     const project = await this.getOwnedProject(ownerId, projectId);
 
-    if (
-      project.status === "paid" &&
-      updateProjectStatusDto.status === "waiting_payment"
-    ) {
-      throw new BadRequestException(
-        "Project đã thanh toán thì không thể chuyển lại chờ thanh toán",
-      );
-    }
+    this.assertValidStatusTransition(project.status, updateProjectStatusDto.status);
 
     project.status = updateProjectStatusDto.status;
     project.paidAmount =
@@ -452,18 +455,13 @@ export class ProjectsService {
     this.ensureProjectKeyword(project);
     await project.save();
 
+    const notification = this.buildStatusNotification(project);
     await this.notificationsService.create({
       ownerId,
       projectId: project._id,
       type: "payment_updated",
-      title:
-        updateProjectStatusDto.status === "paid"
-          ? "Project đã được đánh dấu thanh toán"
-          : "Project đã chuyển về chờ thanh toán",
-      message:
-        updateProjectStatusDto.status === "paid"
-          ? `${project.name} đã thanh toán${project.paidAmount != null ? ` ${project.paidAmount.toLocaleString("vi-VN")} VNĐ` : ""}.`
-          : `${project.name} đang chờ thanh toán.`,
+      title: notification.title,
+      message: notification.message,
       projectName: project.name,
       metadata: {
         status: project.status,
@@ -486,14 +484,7 @@ export class ProjectsService {
   ) {
     const project = await this.getProjectForAdmin(projectId);
 
-    if (
-      project.status === "paid" &&
-      updateProjectStatusDto.status === "waiting_payment"
-    ) {
-      throw new BadRequestException(
-        "Project đã thanh toán thì không thể chuyển lại chờ thanh toán",
-      );
-    }
+    this.assertValidStatusTransition(project.status, updateProjectStatusDto.status);
 
     project.status = updateProjectStatusDto.status;
     project.paidAmount =
@@ -504,18 +495,13 @@ export class ProjectsService {
     this.ensureProjectKeyword(project);
     await project.save();
 
+    const notification = this.buildStatusNotification(project);
     await this.notificationsService.create({
       ownerId: project.ownerId.toString(),
       projectId: project._id,
       type: "payment_updated",
-      title:
-        updateProjectStatusDto.status === "paid"
-          ? "Project đã được đánh dấu thanh toán"
-          : "Project đã chuyển về chờ thanh toán",
-      message:
-        updateProjectStatusDto.status === "paid"
-          ? `${project.name} đã thanh toán${project.paidAmount != null ? ` ${project.paidAmount.toLocaleString("vi-VN")} VNĐ` : ""}.`
-          : `${project.name} đang chờ thanh toán.`,
+      title: notification.title,
+      message: notification.message,
       projectName: project.name,
       metadata: {
         status: project.status,
@@ -805,6 +791,48 @@ export class ProjectsService {
     ) {
       throw new BadRequestException("Dung luong anh toi da 30MB");
     }
+  }
+
+  private assertValidStatusTransition(
+    currentStatus: Project["status"],
+    nextStatus: Project["status"],
+  ) {
+    if (currentStatus === nextStatus) {
+      return;
+    }
+
+    if (currentStatus === "paid" && nextStatus !== "paid") {
+      throw new BadRequestException(
+        "Project đã thanh toán thì không thể chuyển sang trạng thái khác",
+      );
+    }
+
+    if (currentStatus === "cancelled" && nextStatus === "waiting_payment") {
+      throw new BadRequestException(
+        "Project đã hủy thì không thể chuyển lại về chờ thanh toán",
+      );
+    }
+  }
+
+  private buildStatusNotification(project: ProjectDocument) {
+    if (project.status === "paid") {
+      return {
+        title: "Project đã được đánh dấu thanh toán",
+        message: `${project.name} đã thanh toán${project.paidAmount != null ? ` ${project.paidAmount.toLocaleString("vi-VN")} VNĐ` : ""}.`,
+      };
+    }
+
+    if (project.status === "cancelled") {
+      return {
+        title: "Project đã được hủy",
+        message: `${project.name} đã được đánh dấu hủy do khách không tiếp tục thanh toán.`,
+      };
+    }
+
+    return {
+      title: "Project đã chuyển về chờ thanh toán",
+      message: `${project.name} đang chờ thanh toán.`,
+    };
   }
 
   private buildListBaseFilter(ownerId: string | undefined, query: ListProjectsQueryDto) {

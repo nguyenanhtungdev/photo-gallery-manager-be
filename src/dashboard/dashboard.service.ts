@@ -34,6 +34,7 @@ export class DashboardService {
       totalProjects: 0,
       paidProjects: 0,
       waitingProjects: 0,
+      cancelledProjects: 0,
       totalPhotos: 0,
       totalViewSessions: 0,
       totalPaidAmount: 0,
@@ -46,12 +47,16 @@ export class DashboardService {
     const averagePhotosPerProject = baseSummary.totalProjects > 0
       ? Number((baseSummary.totalPhotos / baseSummary.totalProjects).toFixed(1))
       : 0
+    const cancellationRate = baseSummary.paidProjects > 0
+      ? Math.round((baseSummary.cancelledProjects / baseSummary.paidProjects) * 100)
+      : 0
 
     return {
       summary: {
         ...baseSummary,
         paidPercentage,
         averagePhotosPerProject,
+        cancellationRate,
       },
       recentProjects: recentProjects.map((project) => ({
         id: project._id.toString(),
@@ -113,6 +118,7 @@ export class DashboardService {
       totalProjects: 0,
       paidProjects: 0,
       waitingProjects: 0,
+      cancelledProjects: 0,
       totalPhotos: 0,
       totalViewSessions: 0,
       totalPaidAmount: 0,
@@ -122,6 +128,9 @@ export class DashboardService {
       : 0
     const averagePhotosPerProject = baseSummary.totalProjects > 0
       ? Number((baseSummary.totalPhotos / baseSummary.totalProjects).toFixed(1))
+      : 0
+    const cancellationRate = baseSummary.paidProjects > 0
+      ? Math.round((baseSummary.cancelledProjects / baseSummary.paidProjects) * 100)
       : 0
     const recentProjectOwnerMap = await this.getUserDirectory(
       recentProjects.map((project) => project.ownerId.toString()),
@@ -135,6 +144,7 @@ export class DashboardService {
         ...baseSummary,
         paidPercentage,
         averagePhotosPerProject,
+        cancellationRate,
       },
       recentUsers: recentUsers.map((user) => ({
         id: user._id.toString(),
@@ -217,6 +227,11 @@ export class DashboardService {
                 $cond: [{ $eq: ['$status', 'waiting_payment'] }, 1, 0],
               },
             },
+            cancelledProjectCount: {
+              $sum: {
+                $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0],
+              },
+            },
             totalPhotos: { $sum: '$photoCount' },
             totalViewSessions: { $sum: '$viewSessionCount' },
             totalPaidAmount: {
@@ -252,6 +267,7 @@ export class DashboardService {
             projectCount: projectStats?.projectCount ?? 0,
             paidProjectCount: projectStats?.paidProjectCount ?? 0,
             waitingProjectCount: projectStats?.waitingProjectCount ?? 0,
+            cancelledProjectCount: projectStats?.cancelledProjectCount ?? 0,
             totalPhotos: projectStats?.totalPhotos ?? 0,
             totalViewSessions: projectStats?.totalViewSessions ?? 0,
             totalPaidAmount: projectStats?.totalPaidAmount ?? 0,
@@ -303,6 +319,11 @@ export class DashboardService {
           waitingProjects: {
             $sum: {
               $cond: [{ $eq: ['$status', 'waiting_payment'] }, 1, 0],
+            },
+          },
+          cancelledProjects: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0],
             },
           },
           totalPhotos: { $sum: '$photoCount' },
@@ -400,6 +421,7 @@ type DashboardProjectSummaryRow = {
   totalProjects: number
   paidProjects: number
   waitingProjects: number
+  cancelledProjects: number
   totalPhotos: number
   totalViewSessions: number
   totalPaidAmount: number
@@ -410,6 +432,7 @@ type AdminUserProjectStatsRow = {
   projectCount: number
   paidProjectCount: number
   waitingProjectCount: number
+  cancelledProjectCount: number
   totalPhotos: number
   totalViewSessions: number
   totalPaidAmount: number

@@ -10,8 +10,8 @@ function toOptionalNumber(value: unknown) {
 }
 
 export class UpdateProjectStatusDto {
-  @IsIn(['waiting_payment', 'paid'])
-  status!: 'waiting_payment' | 'paid'
+  @IsIn(['waiting_payment', 'paid', 'cancelled'])
+  status!: 'waiting_payment' | 'paid' | 'cancelled'
 
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))

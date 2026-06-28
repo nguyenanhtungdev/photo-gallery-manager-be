@@ -3,6 +3,7 @@ import { AuthService } from './auth.service'
 import { ConfirmForgotPasswordCodeDto } from './dto/confirm-forgot-password-code.dto'
 import { ConfirmPasswordChangeCodeDto } from './dto/confirm-password-change-code.dto'
 import { ConfirmRegisterCodeDto } from './dto/confirm-register-code.dto'
+import { CreateAvatarUploadDto } from './dto/create-avatar-upload.dto'
 import { LoginDto } from './dto/login.dto'
 import { RememberedLoginDto } from './dto/remembered-login.dto'
 import { RegisterDto } from './dto/register.dto'
@@ -68,6 +69,15 @@ export class AuthController {
   @Get('me')
   me(@Request() req: { user: { sub: string } }) {
     return this.authService.getProfile(req.user.sub)
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('avatar/presign-put')
+  createAvatarUploadUrl(
+    @Request() req: { user: { sub: string } },
+    @Body() createAvatarUploadDto: CreateAvatarUploadDto,
+  ) {
+    return this.authService.createAvatarUploadUrl(req.user.sub, createAvatarUploadDto)
   }
 
   @UseGuards(JwtAuthGuard)

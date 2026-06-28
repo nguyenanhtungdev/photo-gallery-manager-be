@@ -1,6 +1,6 @@
 import { HydratedDocument, Model, Schema, Types, model, models } from 'mongoose'
 
-export type ProjectStatus = 'waiting_payment' | 'paid'
+export type ProjectStatus = 'waiting_payment' | 'paid' | 'cancelled'
 
 export interface Photo {
   id: string
@@ -114,7 +114,7 @@ const projectSchema = new Schema<Project>(
     },
     status: {
       type: String,
-      enum: ['waiting_payment', 'paid'],
+      enum: ['waiting_payment', 'paid', 'cancelled'],
       default: 'waiting_payment',
     },
     paidAmount: {

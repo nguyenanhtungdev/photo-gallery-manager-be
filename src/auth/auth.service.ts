@@ -5,9 +5,11 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
-import { randomInt, randomUUID } from "node:crypto";
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { Error as MongooseError } from "mongoose";
 import type { StringValue } from "ms";
+import { StorageService } from "../storage/storage.service";
+import { CreateAvatarUploadDto } from "./dto/create-avatar-upload.dto";
 import { LoginDto } from "./dto/login.dto";
 import { ConfirmForgotPasswordCodeDto } from "./dto/confirm-forgot-password-code.dto";
 import {
@@ -31,6 +33,7 @@ type SafeUser = {
   email: string;
   username: string;
   role: UserRole;
+  avatarUrl: string | null;
   imageResizeWidth: 120 | 360 | 480 | 720 | null;
   createdAt: Date;
   updatedAt: Date;
@@ -62,6 +65,7 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
+    private readonly storageService: StorageService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -335,7 +339,29 @@ export class AuthService {
     }
 
     return {
-      user: this.toSafeUser(user),
+      user: await this.toSafeUser(user),
+    };
+  }
+
+  async createAvatarUploadUrl(userId: string, createAvatarUploadDto: CreateAvatarUploadDto) {
+    await this.ensureUserExists(userId);
+    this.validateImageUpload(
+      createAvatarUploadDto.contentType,
+      createAvatarUploadDto.fileSize,
+    );
+
+    const key = this.buildAvatarStorageKey(userId, createAvatarUploadDto.fileName);
+    const uploadUrl = await this.storageService.getSignedUploadUrl(
+      key,
+      createAvatarUploadDto.contentType,
+    );
+
+    return {
+      key,
+      uploadUrl,
+      method: "PUT",
+      contentType: createAvatarUploadDto.contentType,
+      expiresIn: 600,
     };
   }
 
@@ -346,14 +372,38 @@ export class AuthService {
       throw new UnauthorizedException("Người dùng không hợp lệ");
     }
 
+    const previousAvatarKey = user.avatarKey ?? null;
+
     if (updateUserSettingsDto.imageResizeWidth !== undefined) {
       user.imageResizeWidth = updateUserSettingsDto.imageResizeWidth;
     }
 
+    if (updateUserSettingsDto.avatarKey !== undefined) {
+      if (
+        updateUserSettingsDto.avatarKey &&
+        !this.isOwnedAvatarKey(userId, updateUserSettingsDto.avatarKey)
+      ) {
+        throw new BadRequestException("Avatar không hợp lệ");
+      }
+
+      user.avatarKey = updateUserSettingsDto.avatarKey ?? null;
+    }
+
     await user.save();
 
+    if (
+      previousAvatarKey &&
+      previousAvatarKey !== user.avatarKey
+    ) {
+      try {
+        await this.storageService.deleteObject(previousAvatarKey);
+      } catch {
+        // Ignore cleanup failures so profile updates still succeed.
+      }
+    }
+
     return {
-      user: this.toSafeUser(user),
+      user: await this.toSafeUser(user),
     };
   }
 
@@ -420,7 +470,7 @@ export class AuthService {
 
     await user.save();
 
-    const safeUser = this.toSafeUser(user);
+    const safeUser = await this.toSafeUser(user);
     const accessTokenPayload: AccessTokenPayload = {
       sub: user._id.toString(),
       username: user.username,
@@ -461,17 +511,51 @@ export class AuthService {
     return response;
   }
 
-  private toSafeUser(user: UserDocument): SafeUser {
+  private async toSafeUser(user: UserDocument): Promise<SafeUser> {
+    let avatarUrl: string | null = null;
+
+    if (user.avatarKey) {
+      try {
+        avatarUrl = await this.storageService.getSignedViewUrl(user.avatarKey);
+      } catch {
+        avatarUrl = null;
+      }
+    }
+
     return {
       id: user._id.toString(),
       name: user.name,
       email: user.email,
       username: user.username,
       role: this.resolveUserRole(user.role),
+      avatarUrl,
       imageResizeWidth: this.resolveImageResizeWidth(user.imageResizeWidth),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
+  }
+
+  private async ensureUserExists(userId: string) {
+    const user = await UserModel.findById(userId).select({ _id: 1 }).lean().exec();
+    if (!user) {
+      throw new UnauthorizedException("Người dùng không hợp lệ");
+    }
+  }
+
+  private buildAvatarStorageKey(userId: string, fileName: string) {
+    const safeFileName =
+      fileName
+        .trim()
+        .split("/")
+        .pop()
+        ?.replace(/[^a-zA-Z0-9._-]/g, "_") || "avatar.jpg";
+    const randomPart = randomBytes(4).toString("hex");
+
+    return `avatars/${userId}/${Date.now()}-${randomPart}-${safeFileName}`;
+  }
+
+  private isOwnedAvatarKey(userId: string, key: string) {
+    return key.startsWith(`avatars/${userId}/`);
   }
 
   private resolveImageResizeWidth(value?: number | null): 120 | 360 | 480 | 720 | null {
@@ -624,5 +708,29 @@ export class AuthService {
 
   private generateVerificationCode() {
     return randomInt(100000, 1000000).toString();
+  }
+
+  private validateImageUpload(contentType: string, fileSize: number) {
+    if (!contentType.startsWith("image/")) {
+      throw new BadRequestException("Chi ho tro upload file anh");
+    }
+
+    const allowedMimeTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+    ];
+    if (!allowedMimeTypes.includes(contentType)) {
+      throw new BadRequestException("Loai anh chua duoc ho tro");
+    }
+
+    if (
+      !Number.isFinite(fileSize) ||
+      fileSize <= 0 ||
+      fileSize > 30 * 1024 * 1024
+    ) {
+      throw new BadRequestException("Dung luong anh toi da 30MB");
+    }
   }
 }
