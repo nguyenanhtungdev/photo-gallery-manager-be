@@ -16,7 +16,14 @@ import {
   EmailVerificationModel,
   EmailVerificationPurpose,
 } from "./models/email-verification.model";
-import { UserDocument, UserModel, UserRole } from "./models/user.model";
+import {
+  UserDocument,
+  UserModel,
+  UserRole,
+  WatermarkPosition,
+  WatermarkSettings,
+  WatermarkStyle,
+} from "./models/user.model";
 import { RememberedLoginDto } from "./dto/remembered-login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { RequestForgotPasswordCodeDto } from "./dto/request-forgot-password-code.dto";
@@ -35,8 +42,22 @@ type SafeUser = {
   role: UserRole;
   avatarUrl: string | null;
   imageResizeWidth: 120 | 360 | 480 | 720 | null;
+  watermarkSettings: WatermarkSettings;
   createdAt: Date;
   updatedAt: Date;
+};
+
+const DEFAULT_WATERMARK_SETTINGS: WatermarkSettings = {
+  text: "kim cảnh · 0867177174",
+  opacity: 0.4,
+  textScale: 1,
+  rotationDegrees: 0,
+  textsPerLine: 1,
+  lineCount: 1,
+  customX: 0.5,
+  customY: 0.5,
+  position: "all-corners",
+  style: "light",
 };
 
 type AccessTokenPayload = {
@@ -378,6 +399,13 @@ export class AuthService {
       user.imageResizeWidth = updateUserSettingsDto.imageResizeWidth;
     }
 
+    if (updateUserSettingsDto.watermarkSettings !== undefined) {
+      user.watermarkSettings = this.resolveWatermarkSettings({
+        ...user.watermarkSettings,
+        ...updateUserSettingsDto.watermarkSettings,
+      });
+    }
+
     if (updateUserSettingsDto.avatarKey !== undefined) {
       if (
         updateUserSettingsDto.avatarKey &&
@@ -530,6 +558,7 @@ export class AuthService {
       role: this.resolveUserRole(user.role),
       avatarUrl,
       imageResizeWidth: this.resolveImageResizeWidth(user.imageResizeWidth),
+      watermarkSettings: this.resolveWatermarkSettings(user.watermarkSettings),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -564,6 +593,115 @@ export class AuthService {
     }
 
     return value === 120 || value === 360 || value === 480 || value === 720 ? value : 720;
+  }
+
+  private resolveWatermarkSettings(value?: Partial<WatermarkSettings> | null): WatermarkSettings {
+    const text = value?.text?.trim() || DEFAULT_WATERMARK_SETTINGS.text;
+    const opacity =
+      typeof value?.opacity === "number" && Number.isFinite(value.opacity)
+        ? Math.min(1, Math.max(0.1, value.opacity))
+        : DEFAULT_WATERMARK_SETTINGS.opacity;
+    const position = this.isWatermarkPosition(value?.position)
+      ? value.position
+      : DEFAULT_WATERMARK_SETTINGS.position;
+    const style = this.isWatermarkStyle(value?.style)
+      ? value.style
+      : DEFAULT_WATERMARK_SETTINGS.style;
+    const textScale = this.resolveWatermarkNumber(
+      value?.textScale,
+      DEFAULT_WATERMARK_SETTINGS.textScale,
+      0.5,
+      3,
+    );
+    const rotationDegrees = this.resolveWatermarkNumber(
+      value?.rotationDegrees,
+      DEFAULT_WATERMARK_SETTINGS.rotationDegrees,
+      -180,
+      180,
+    );
+    const textsPerLine = this.resolveWatermarkCount(
+      value?.textsPerLine,
+      DEFAULT_WATERMARK_SETTINGS.textsPerLine,
+      1,
+      6,
+    );
+    const lineCount = this.resolveWatermarkCount(
+      value?.lineCount,
+      DEFAULT_WATERMARK_SETTINGS.lineCount,
+      1,
+      5,
+    );
+    const customX = this.resolveWatermarkCoordinate(
+      value?.customX,
+      DEFAULT_WATERMARK_SETTINGS.customX,
+    );
+    const customY = this.resolveWatermarkCoordinate(
+      value?.customY,
+      DEFAULT_WATERMARK_SETTINGS.customY,
+    );
+
+    return {
+      text: text.slice(0, 80),
+      opacity,
+      textScale,
+      rotationDegrees,
+      textsPerLine,
+      lineCount,
+      customX,
+      customY,
+      position,
+      style,
+    };
+  }
+
+  private resolveWatermarkCount(
+    value: unknown,
+    fallback: number,
+    min: number,
+    max: number,
+  ) {
+    const numericValue =
+      typeof value === "number" && Number.isFinite(value)
+        ? Math.round(value)
+        : fallback;
+    return Math.min(max, Math.max(min, numericValue));
+  }
+
+  private resolveWatermarkNumber(
+    value: unknown,
+    fallback: number,
+    min: number,
+    max: number,
+  ) {
+    const numericValue =
+      typeof value === "number" && Number.isFinite(value) ? value : fallback;
+    return Math.min(max, Math.max(min, numericValue));
+  }
+
+  private resolveWatermarkCoordinate(value: unknown, fallback: number) {
+    const numericValue =
+      typeof value === "number" && Number.isFinite(value) ? value : fallback;
+    return Math.min(0.95, Math.max(0.05, numericValue));
+  }
+
+  private isWatermarkPosition(value: unknown): value is WatermarkPosition {
+    return (
+      value === "bottom-corners" ||
+      value === "top-corners" ||
+      value === "all-corners" ||
+      value === "center" ||
+      value === "diagonal" ||
+      value === "custom"
+    );
+  }
+
+  private isWatermarkStyle(value: unknown): value is WatermarkStyle {
+    return (
+      value === "light" ||
+      value === "dark" ||
+      value === "outline" ||
+      value === "badge"
+    );
   }
 
   private resolveUserRole(role?: UserRole | null): UserRole {

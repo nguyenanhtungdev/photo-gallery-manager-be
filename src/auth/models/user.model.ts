@@ -1,6 +1,21 @@
 import { HydratedDocument, Model, Schema, Types, model, models } from 'mongoose'
 
 export type UserRole = 'admin' | 'user'
+export type WatermarkPosition = 'bottom-corners' | 'top-corners' | 'all-corners' | 'center' | 'diagonal' | 'custom'
+export type WatermarkStyle = 'light' | 'dark' | 'outline' | 'badge'
+
+export interface WatermarkSettings {
+  text: string
+  opacity: number
+  textScale: number
+  rotationDegrees: number
+  textsPerLine: number
+  lineCount: number
+  customX: number
+  customY: number
+  position: WatermarkPosition
+  style: WatermarkStyle
+}
 
 export interface User {
   _id: Types.ObjectId
@@ -10,6 +25,7 @@ export interface User {
   role: UserRole
   avatarKey?: string | null
   imageResizeWidth?: number | null
+  watermarkSettings?: WatermarkSettings | null
   passwordHash: string
   rememberedLogins: Array<{
     sessionId: string
@@ -64,6 +80,83 @@ const userSchema = new Schema<User>(
       type: Number,
       enum: [120, 360, 480, 720],
       default: 720,
+    },
+    watermarkSettings: {
+      type: new Schema<WatermarkSettings>(
+        {
+          text: {
+            type: String,
+            trim: true,
+            maxlength: 80,
+            default: 'kim cảnh · 0867177174',
+          },
+          opacity: {
+            type: Number,
+            min: 0.1,
+            max: 1,
+            default: 0.4,
+          },
+          textScale: {
+            type: Number,
+            min: 0.5,
+            max: 3,
+            default: 1,
+          },
+          rotationDegrees: {
+            type: Number,
+            min: -180,
+            max: 180,
+            default: 0,
+          },
+          textsPerLine: {
+            type: Number,
+            min: 1,
+            max: 6,
+            default: 1,
+          },
+          lineCount: {
+            type: Number,
+            min: 1,
+            max: 5,
+            default: 1,
+          },
+          customX: {
+            type: Number,
+            min: 0.05,
+            max: 0.95,
+            default: 0.5,
+          },
+          customY: {
+            type: Number,
+            min: 0.05,
+            max: 0.95,
+            default: 0.5,
+          },
+          position: {
+            type: String,
+            enum: ['bottom-corners', 'top-corners', 'all-corners', 'center', 'diagonal', 'custom'],
+            default: 'all-corners',
+          },
+          style: {
+            type: String,
+            enum: ['light', 'dark', 'outline', 'badge'],
+            default: 'light',
+          },
+        },
+        { _id: false },
+      ),
+      default: () => ({
+        text: 'kim cảnh · 0867177174',
+        opacity: 0.4,
+        textScale: 1,
+        rotationDegrees: 0,
+        textsPerLine: 1,
+        lineCount: 1,
+        customX: 0.5,
+        customY: 0.5,
+        position: 'all-corners',
+        style: 'light',
+      }),
     },
     passwordHash: {
       type: String,
