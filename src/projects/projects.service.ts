@@ -13,6 +13,7 @@ import {
   WatermarkStyle,
 } from "../auth/models/user.model";
 import { NotificationsService } from "../notifications/notifications.service";
+import { SettingsService } from "../settings/settings.service";
 import { ProjectShareGateway } from "./project-share.gateway";
 import { AddProjectPhotoDto } from "./dto/add-project-photo.dto";
 import { CreateProjectDto } from "./dto/create-project.dto";
@@ -58,6 +59,7 @@ export class ProjectsService {
     private readonly storageService: StorageService,
     private readonly notificationsService: NotificationsService,
     private readonly projectShareGateway: ProjectShareGateway,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async list(ownerId: string, query: ListProjectsQueryDto) {
@@ -168,7 +170,9 @@ export class ProjectsService {
     const resolvedProjectName =
       createProjectDto.name?.trim() || createProjectDto.clientName;
     const resolvedClientPhone = createProjectDto.clientPhone?.trim() || null;
+    const projectCode = await this.generateProjectCode();
     const keyword = this.buildProjectKeyword({
+      projectCode,
       name: resolvedProjectName,
       clientName: createProjectDto.clientName,
       clientPhone: resolvedClientPhone,
@@ -177,6 +181,7 @@ export class ProjectsService {
 
     const project = await ProjectModel.create({
       ownerId: this.toObjectId(ownerId),
+      projectCode,
       name: resolvedProjectName,
       clientName: createProjectDto.clientName,
       clientPhone: resolvedClientPhone,
@@ -185,6 +190,9 @@ export class ProjectsService {
       shareToken: this.generateShareToken(),
       status: "waiting_payment",
       paidAmount: undefined,
+      paidAt: null,
+      photosCleanedAt: null,
+      photosCleanupReason: null,
       photos: [],
       accessLogs: [],
     });
@@ -239,36 +247,32 @@ export class ProjectsService {
     projectId: string,
     updateProjectDto: UpdateProjectDto,
   ) {
+    const project = await ProjectModel.findOne({
+      _id: this.toProjectObjectId(projectId),
+      ownerId: this.toObjectId(ownerId),
+    }).exec();
+
+    if (!project) {
+      throw new NotFoundException("Project khong ton tai");
+    }
+
     const resolvedProjectName =
       updateProjectDto.name?.trim() || updateProjectDto.clientName;
     const resolvedClientPhone = updateProjectDto.clientPhone?.trim() || null;
-    const keyword = this.buildProjectKeyword({
+
+    project.name = resolvedProjectName;
+    project.clientName = updateProjectDto.clientName;
+    project.clientPhone = resolvedClientPhone;
+    project.notes = updateProjectDto.notes;
+    project.keyword = this.buildProjectKeyword({
+      projectCode: project.projectCode,
       name: resolvedProjectName,
       clientName: updateProjectDto.clientName,
       clientPhone: resolvedClientPhone,
       notes: updateProjectDto.notes,
     });
 
-    const project = await ProjectModel.findOneAndUpdate(
-      {
-        _id: this.toProjectObjectId(projectId),
-        ownerId: this.toObjectId(ownerId),
-      },
-      {
-        name: resolvedProjectName,
-        clientName: updateProjectDto.clientName,
-        clientPhone: resolvedClientPhone,
-        notes: updateProjectDto.notes,
-        keyword,
-      },
-      {
-        new: true,
-      },
-    ).exec();
-
-    if (!project) {
-      throw new NotFoundException("Project khong ton tai");
-    }
+    await project.save();
 
     return {
       project: await this.toProjectResponse(project),
@@ -286,6 +290,7 @@ export class ProjectsService {
     project.clientPhone = resolvedClientPhone;
     project.notes = updateProjectDto.notes;
     project.keyword = this.buildProjectKeyword({
+      projectCode: project.projectCode,
       name: resolvedProjectName,
       clientName: updateProjectDto.clientName,
       clientPhone: resolvedClientPhone,
@@ -339,7 +344,9 @@ export class ProjectsService {
     projectId: string,
     createProjectPhotoPresignDto: CreateProjectPhotoPresignDto,
   ) {
-    await this.getOwnedProject(ownerId, projectId);
+    const project = await this.getOwnedProject(ownerId, projectId);
+    await this.ensurePhotoStorageExpiration(project);
+    this.assertPhotoStorageAvailable(project);
     this.validateImageUpload(
       createProjectPhotoPresignDto.contentType,
       createProjectPhotoPresignDto.fileSize,
@@ -369,6 +376,8 @@ export class ProjectsService {
     createProjectPhotoPresignDto: CreateProjectPhotoPresignDto,
   ) {
     const project = await this.getProjectForAdmin(projectId);
+    await this.ensurePhotoStorageExpiration(project);
+    this.assertPhotoStorageAvailable(project);
     this.validateImageUpload(
       createProjectPhotoPresignDto.contentType,
       createProjectPhotoPresignDto.fileSize,
@@ -399,6 +408,8 @@ export class ProjectsService {
     addProjectPhotoDto: AddProjectPhotoDto,
   ) {
     const project = await this.getOwnedProject(ownerId, projectId);
+    await this.ensurePhotoStorageExpiration(project);
+    this.assertPhotoStorageAvailable(project);
     this.validateImageUpload(
       addProjectPhotoDto.contentType,
       addProjectPhotoDto.fileSize,
@@ -418,6 +429,8 @@ export class ProjectsService {
     };
 
     this.ensureProjectKeyword(project);
+    project.photosCleanedAt = null;
+    project.photosCleanupReason = null;
     project.photos.unshift(photo);
     await project.save();
 
@@ -428,6 +441,8 @@ export class ProjectsService {
 
   async addPhotoForAdmin(projectId: string, addProjectPhotoDto: AddProjectPhotoDto) {
     const project = await this.getProjectForAdmin(projectId);
+    await this.ensurePhotoStorageExpiration(project);
+    this.assertPhotoStorageAvailable(project);
     this.validateImageUpload(
       addProjectPhotoDto.contentType,
       addProjectPhotoDto.fileSize,
@@ -447,6 +462,8 @@ export class ProjectsService {
     };
 
     this.ensureProjectKeyword(project);
+    project.photosCleanedAt = null;
+    project.photosCleanupReason = null;
     project.photos.unshift(photo);
     await project.save();
 
@@ -461,14 +478,18 @@ export class ProjectsService {
     updateProjectStatusDto: UpdateProjectStatusDto,
   ) {
     const project = await this.getOwnedProject(ownerId, projectId);
-
     this.assertValidStatusTransition(project.status, updateProjectStatusDto.status);
+    this.assertPaymentAmountEditable(project, updateProjectStatusDto.status);
 
     project.status = updateProjectStatusDto.status;
     project.paidAmount =
       updateProjectStatusDto.status === "paid"
         ? updateProjectStatusDto.paidAmount
         : undefined;
+    project.paidAt =
+      updateProjectStatusDto.status === "paid"
+        ? project.paidAt ?? new Date()
+        : null;
 
     this.ensureProjectKeyword(project);
     await project.save();
@@ -501,14 +522,18 @@ export class ProjectsService {
     updateProjectStatusDto: UpdateProjectStatusDto,
   ) {
     const project = await this.getProjectForAdmin(projectId);
-
     this.assertValidStatusTransition(project.status, updateProjectStatusDto.status);
+    this.assertPaymentAmountEditable(project, updateProjectStatusDto.status);
 
     project.status = updateProjectStatusDto.status;
     project.paidAmount =
       updateProjectStatusDto.status === "paid"
         ? updateProjectStatusDto.paidAmount
         : undefined;
+    project.paidAt =
+      updateProjectStatusDto.status === "paid"
+        ? project.paidAt ?? new Date()
+        : null;
 
     this.ensureProjectKeyword(project);
     await project.save();
@@ -604,7 +629,15 @@ export class ProjectsService {
   }
 
   private async toProjectResponse(project: ProjectDocument) {
+    await this.ensureProjectCode(project);
+    await this.ensurePaidAt(project);
+    await this.ensurePhotoStorageExpiration(project);
+
     const visiblePhotos = project.photos.filter((photo) => !photo.isDisabled);
+    const isPhotoStorageExpired =
+      project.status === "paid" &&
+      visiblePhotos.length === 0 &&
+      project.photosCleanupReason === "retention_expired";
     const [effectiveImageResizeWidth, effectiveWatermarkSettings] =
       await Promise.all([
         this.resolveEffectiveImageResizeWidth(project),
@@ -613,6 +646,7 @@ export class ProjectsService {
 
     return {
       id: project._id.toString(),
+      projectCode: project.projectCode ?? null,
       name: project.name,
       clientName: project.clientName,
       clientPhone: project.clientPhone,
@@ -620,6 +654,10 @@ export class ProjectsService {
       status: project.status,
       notes: project.notes,
       paidAmount: project.paidAmount ?? null,
+      paidAt: project.paidAt ?? null,
+      photosCleanedAt: project.photosCleanedAt ?? null,
+      photosCleanupReason: project.photosCleanupReason ?? null,
+      isPhotoStorageExpired,
       imageResizeWidth: null,
       effectiveImageResizeWidth,
       effectiveWatermarkSettings,
@@ -957,6 +995,21 @@ export class ProjectsService {
     }
   }
 
+  private assertPaymentAmountEditable(
+    project: ProjectDocument,
+    nextStatus: Project["status"],
+  ) {
+    if (
+      nextStatus === "paid" &&
+      project.status === "paid" &&
+      project.paidAmount != null
+    ) {
+      throw new BadRequestException(
+        "Project da thanh toan va da co so tien, khong the cap nhat thanh toan",
+      );
+    }
+  }
+
   private buildStatusNotification(project: ProjectDocument) {
     if (project.status === "paid") {
       return {
@@ -992,6 +1045,7 @@ export class ProjectsService {
 
       baseFilter.$or = [
         { keyword: new RegExp(escapedKeywordQuery, "i") },
+        { projectCode: new RegExp(escapedRawQuery, "i") },
         { name: new RegExp(escapedRawQuery, "i") },
         { clientName: new RegExp(escapedRawQuery, "i") },
         { clientPhone: new RegExp(escapedRawQuery, "i") },
@@ -1024,6 +1078,7 @@ export class ProjectsService {
   }
 
   private buildProjectKeyword(input: {
+    projectCode?: string | null;
     name: string;
     clientName: string;
     clientPhone?: string | null;
@@ -1031,6 +1086,7 @@ export class ProjectsService {
   }) {
     const keyword = this.normalizeForKeyword(
       [
+        input.projectCode ?? "",
         input.name,
         input.clientName,
         input.clientPhone ?? "",
@@ -1053,11 +1109,93 @@ export class ProjectsService {
     }
 
     project.keyword = this.buildProjectKeyword({
+      projectCode: project.projectCode,
       name: project.name,
       clientName: project.clientName,
       clientPhone: project.clientPhone,
       notes: project.notes ?? undefined,
     });
+  }
+
+  private async ensureProjectCode(project: ProjectDocument) {
+    if (project.projectCode?.trim()) {
+      return;
+    }
+
+    project.projectCode = await this.generateProjectCode();
+    project.keyword = this.buildProjectKeyword({
+      projectCode: project.projectCode,
+      name: project.name,
+      clientName: project.clientName,
+      clientPhone: project.clientPhone,
+      notes: project.notes ?? undefined,
+    });
+
+    await project.save();
+  }
+
+  private async ensurePaidAt(project: ProjectDocument) {
+    if (project.status !== "paid" || project.paidAt) {
+      return;
+    }
+
+    project.paidAt = project.updatedAt ?? project.createdAt ?? new Date();
+    await project.save();
+  }
+
+  private async ensurePhotoStorageExpiration(project: ProjectDocument) {
+    if (
+      project.status !== "paid" ||
+      project.photos.length > 0 ||
+      project.photosCleanupReason === "retention_expired"
+    ) {
+      return;
+    }
+
+    const paidAt = project.paidAt ?? project.updatedAt ?? project.createdAt;
+    if (!paidAt) {
+      return;
+    }
+
+    const settings = await this.settingsService.getSettings();
+    const cutoff = new Date(
+      Date.now() - settings.paidProjectPhotoRetentionDays * 24 * 60 * 60 * 1000,
+    );
+
+    if (new Date(paidAt).getTime() > cutoff.getTime()) {
+      return;
+    }
+
+    project.photosCleanedAt = project.photosCleanedAt ?? new Date();
+    project.photosCleanupReason = "retention_expired";
+    await project.save();
+  }
+
+  private assertPhotoStorageAvailable(project: ProjectDocument) {
+    if (
+      project.status === "paid" &&
+      project.photos.length === 0 &&
+      project.photosCleanupReason === "retention_expired"
+    ) {
+      throw new BadRequestException(
+        "Anh cua project da qua han luu tru va khong con tren he thong",
+      );
+    }
+  }
+
+  private async generateProjectCode() {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const candidate = `PG-${randomBytes(3).toString("hex").toUpperCase()}`;
+      const exists = await ProjectModel.exists({ projectCode: candidate }).exec();
+
+      if (!exists) {
+        return candidate;
+      }
+    }
+
+    return `PG-${Date.now().toString(36).toUpperCase()}-${randomBytes(2)
+      .toString("hex")
+      .toUpperCase()}`;
   }
 
   private normalizeForKeyword(value: string) {

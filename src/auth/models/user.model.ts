@@ -20,6 +20,7 @@ export interface WatermarkSettings {
 export interface User {
   _id: Types.ObjectId
   name?: string | null
+  phone?: string | null
   email: string
   username: string
   role: UserRole
@@ -47,6 +48,11 @@ export interface User {
 const userSchema = new Schema<User>(
   {
     name: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    phone: {
       type: String,
       trim: true,
       default: null,

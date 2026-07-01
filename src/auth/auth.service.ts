@@ -37,6 +37,7 @@ import { UpdateUserSettingsDto } from "./dto/update-user-settings.dto";
 type SafeUser = {
   id: string;
   name?: string | null;
+  phone?: string | null;
   email: string;
   username: string;
   role: UserRole;
@@ -395,6 +396,14 @@ export class AuthService {
 
     const previousAvatarKey = user.avatarKey ?? null;
 
+    if (updateUserSettingsDto.name !== undefined) {
+      user.name = updateUserSettingsDto.name || null;
+    }
+
+    if (updateUserSettingsDto.phone !== undefined) {
+      user.phone = updateUserSettingsDto.phone || null;
+    }
+
     if (updateUserSettingsDto.imageResizeWidth !== undefined) {
       user.imageResizeWidth = updateUserSettingsDto.imageResizeWidth;
     }
@@ -553,6 +562,7 @@ export class AuthService {
     return {
       id: user._id.toString(),
       name: user.name,
+      phone: user.phone ?? null,
       email: user.email,
       username: user.username,
       role: this.resolveUserRole(user.role),

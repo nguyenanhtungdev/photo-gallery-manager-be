@@ -59,6 +59,12 @@ Required extras:
 `API_KEY` được backend dùng để xác thực header `x-api-key` cho toàn bộ API.
 `ALLOWED_ORIGINS` là danh sách origin phân tách bằng dấu phẩy, ví dụ `http://localhost:3000,https://photo-manager.chatmenow.cloud`.
 
+Optional:
+
+- `PAID_PROJECT_PHOTO_RETENTION_DAYS` - giá trị fallback ban đầu cho số ngày giữ ảnh sau khi project được đánh dấu đã thanh toán. Admin có thể đổi trong UI, mặc định `7`.
+- `PAID_PROJECT_PHOTO_CLEANUP_HOUR` - giờ chạy cleanup hằng ngày theo giờ Việt Nam, mặc định `3`.
+- `PAID_PROJECT_PHOTO_CLEANUP_MINUTE` - phút chạy cleanup theo giờ Việt Nam, mặc định `0`.
+
 ## Notes
 
 - The workflow only deploys the backend container. MongoDB and S3 are expected to be managed separately.

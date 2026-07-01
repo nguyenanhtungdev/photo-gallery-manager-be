@@ -29,6 +29,7 @@ export interface AccessLog {
 export interface Project {
   _id: Types.ObjectId
   ownerId: Types.ObjectId
+  projectCode?: string | null
   name: string
   clientName: string
   clientPhone: string | null
@@ -36,6 +37,9 @@ export interface Project {
   shareToken: string
   status: ProjectStatus
   paidAmount?: number
+  paidAt?: Date | null
+  photosCleanedAt?: Date | null
+  photosCleanupReason?: 'retention_expired' | null
   imageResizeWidth?: number | null
   notes?: string
   photos: Photo[]
@@ -85,6 +89,11 @@ const projectSchema = new Schema<Project>(
       required: true,
       index: true,
     },
+    projectCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+    },
     name: {
       type: String,
       required: true,
@@ -122,6 +131,19 @@ const projectSchema = new Schema<Project>(
       min: 0,
       default: null,
     },
+    paidAt: {
+      type: Date,
+      default: null,
+    },
+    photosCleanedAt: {
+      type: Date,
+      default: null,
+    },
+    photosCleanupReason: {
+      type: String,
+      enum: ['retention_expired', null],
+      default: null,
+    },
     imageResizeWidth: {
       type: Number,
       enum: [120, 360, 480, 720, null],
@@ -148,6 +170,8 @@ const projectSchema = new Schema<Project>(
 
 projectSchema.index({ ownerId: 1, createdAt: -1 })
 projectSchema.index({ ownerId: 1, keyword: 1 })
+projectSchema.index({ projectCode: 1 }, { unique: true, sparse: true })
+projectSchema.index({ status: 1, paidAt: 1 })
 
 export type ProjectDocument = HydratedDocument<Project>
 

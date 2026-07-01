@@ -4,23 +4,35 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common'
-import { UserRole } from '../models/user.model'
+import { UserModel, UserRole } from '../models/user.model'
 
 type AuthenticatedRequest = {
   user?: {
+    sub?: string
     role?: UserRole
   }
 }
 
 @Injectable()
 export class AdminGuard implements CanActivate {
-  canActivate(context: ExecutionContext) {
+  async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>()
 
-    if (request.user?.role !== 'admin') {
-      throw new ForbiddenException('Ban khong co quyen truy cap')
+    if (request.user?.role === 'admin') {
+      return true
     }
 
-    return true
+    if (request.user?.sub) {
+      const user = await UserModel.findById(request.user.sub)
+        .select({ role: 1 })
+        .lean()
+        .exec()
+
+      if (user?.role === 'admin') {
+        return true
+      }
+    }
+
+    throw new ForbiddenException('Ban khong co quyen truy cap')
   }
 }

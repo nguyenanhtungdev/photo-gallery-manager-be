@@ -68,6 +68,18 @@ export class WatermarkSettingsDto {
 
 export class UpdateUserSettingsDto {
   @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : value === null || value === '' ? null : String(value).trim()))
+  @IsString()
+  @MaxLength(120)
+  name?: string | null
+
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : value === null || value === '' ? null : String(value).trim()))
+  @IsString()
+  @MaxLength(30)
+  phone?: string | null
+
+  @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : value === null || value === '' ? null : Number(value)))
   @IsIn([120, 360, 480, 720, null])
   imageResizeWidth?: 120 | 360 | 480 | 720 | null

@@ -62,6 +62,19 @@ AWS_SECRET_ACCESS_KEY=your-secret-key
 S3_BUCKET_NAME=your-bucket-name
 ```
 
+### Cleanup ảnh đã thanh toán
+
+Backend chạy cron job hằng ngày theo giờ Việt Nam (`Asia/Ho_Chi_Minh`) để xóa ảnh S3 của project đã thanh toán quá số ngày giữ ảnh. Mặc định giữ ảnh 7 ngày và chạy mỗi ngày lúc 03:00. Có thể đặt giá trị fallback ban đầu bằng biến:
+
+```env
+PAID_PROJECT_PHOTO_RETENTION_DAYS=7
+PAID_PROJECT_PHOTO_CLEANUP_HOUR=3
+PAID_PROJECT_PHOTO_CLEANUP_MINUTE=0
+```
+
+Trong admin UI có thể chọn áp dụng cleanup cho tất cả account user hoặc chỉ một số account user cụ thể.
+Mỗi lần cron chạy sẽ được ghi log để xem trạng thái, số project đã quét, số ảnh đã xóa và số ảnh lỗi.
+
 ### Mail
 
 Có thể dùng SMTP thường:
